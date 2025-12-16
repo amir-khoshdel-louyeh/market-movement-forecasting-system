@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-movement-forecasting-system"
+version = "0.1.0"
+description = "Market Movement Forecasting: streaming market data via websockets, later LSTM/Transformer modeling with GUI"
+authors = [{ name = "Amir" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "websockets>=12.0",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+mmfs-stream = "src.mmfs_stream:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+line-length = 100
