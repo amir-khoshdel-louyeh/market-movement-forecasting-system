@@ -15,6 +15,11 @@ pip3 install -r ./requirements.txt
 2. Stream a ticker:
 
 ```bash
+# Option A: via main.py (no install needed)
+python3 main.py btcusdt
+
+# Option B: install console script, then run
+pip install -e .
 mmfs-stream btcusdt
 # Or use default symbol from .env
 ```
