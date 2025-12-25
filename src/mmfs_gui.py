@@ -2,11 +2,15 @@ import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, timedelta
 import random
+import threading
+import asyncio
+import queue
 
 import pandas as pd
 import mplfinance as mpf
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from .mmfs_stream import StreamConfig, stream_kline, DEFAULT_SYMBOL
 
 
 def _generate_sample_candles(n: int = 100) -> pd.DataFrame:
@@ -36,6 +40,10 @@ class CandlesApp(ttk.Frame):
         self.master.title("MMFS – Candlestick Viewer (stub)")
         self.pack(fill=tk.BOTH, expand=True)
 
+        self.df = _generate_sample_candles(60)
+        self._queue: queue.Queue = queue.Queue()
+        self._stream_thread: threading.Thread | None = None
+
         # Top controls
         controls = ttk.Frame(self)
         controls.pack(side=tk.TOP, fill=tk.X, padx=8, pady=6)
@@ -50,7 +58,7 @@ class CandlesApp(ttk.Frame):
             side=tk.LEFT, padx=(4, 12)
         )
 
-        self.start_btn = ttk.Button(controls, text="Start (coming next)", command=self._noop)
+        self.start_btn = ttk.Button(controls, text="Start", command=self._start_stream)
         self.start_btn.pack(side=tk.LEFT)
 
         # Chart area
@@ -62,25 +70,74 @@ class CandlesApp(ttk.Frame):
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         # Initial plot with sample data
-        self._plot_sample()
+        self._replot()
 
     def _noop(self):
         pass
 
-    def _plot_sample(self):
-        df = _generate_sample_candles(120)
+    def _replot(self):
         self.figure.clear()
-        ax = self.figure.add_subplot(111)
+        ax_price = self.figure.add_subplot(2, 1, 1)
+        ax_vol = self.figure.add_subplot(2, 1, 2, sharex=ax_price)
         mpf.plot(
-            df,
+            self.df,
             type="candle",
             style="yahoo",
-            ax=ax,
-            volume=True,
+            ax=ax_price,
+            volume=ax_vol,
             warn_too_much_data=False,
         )
-        ax.set_title("Sample Candlesticks – Live stream next step")
+        ax_price.set_title("Candlesticks – Streaming if started")
+        self.figure.tight_layout()
         self.canvas.draw_idle()
+
+    def _start_stream(self):
+        # Disable button and start background streaming
+        self.start_btn.config(text="Streaming…", state=tk.DISABLED)
+        symbol = self.symbol_var.get().lower() or DEFAULT_SYMBOL
+        interval = self.interval_var.get() or "1m"
+
+        def on_kline(kmsg):
+            self._queue.put(kmsg)
+
+        def run():
+            cfg = StreamConfig(symbol=symbol)
+            asyncio.run(stream_kline(cfg, interval=interval, on_kline=on_kline))
+
+        self._stream_thread = threading.Thread(target=run, daemon=True)
+        self._stream_thread.start()
+        self.after(500, self._drain_queue)
+
+    def _drain_queue(self):
+        updated = False
+        try:
+            while True:
+                kmsg = self._queue.get_nowait()
+                k = kmsg.k
+                # Use kline open time as index
+                dt = datetime.fromtimestamp(k.t / 1000)
+                row = {
+                    "Open": float(k.o),
+                    "High": float(k.h),
+                    "Low": float(k.l),
+                    "Close": float(k.c),
+                    "Volume": float(k.v),
+                }
+                # Insert or update row
+                self.df.loc[dt] = row
+                updated = True
+        except queue.Empty:
+            pass
+
+        if updated:
+            # Ensure datetime index is sorted
+            self.df = self.df.sort_index()
+            # Replot with latest data
+            self._replot()
+
+        # Keep polling while streaming
+        if self._stream_thread and self._stream_thread.is_alive():
+            self.after(500, self._drain_queue)
 
 
 def launch_gui():
