@@ -73,6 +73,18 @@ class CandlesApp(ttk.Frame):
         self.canvas = FigureCanvasTkAgg(self.figure, master=chart_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        # Plot styling
+        self._mc = mpf.make_marketcolors(
+            up='tab:green', down='tab:red', edge='inherit', wick='inherit', volume='in'
+        )
+        self._style = mpf.make_mpf_style(
+            marketcolors=self._mc,
+            gridstyle='--',
+            facecolor='white',
+            figcolor='white',
+            rc={'axes.grid': True}
+        )
+
         # Initial plot with sample data
         self._replot()
 
@@ -86,12 +98,23 @@ class CandlesApp(ttk.Frame):
         mpf.plot(
             self.df,
             type="candle",
-            style="yahoo",
+            style=self._style,
             ax=ax_price,
             volume=ax_vol,
-            warn_too_much_data=False,
+            warn_too_much_data=1000,
+            datetime_format='%H:%M',
+            xrotation=15,
+            update_width_config={'candle_linewidth': 0.7, 'candle_width': 0.6, 'volume_width': 0.8},
         )
-        ax_price.set_title("Candlesticks – Streaming if started")
+        # Autoscale with small margins for better readability
+        ax_price.margins(y=0.05)
+        ax_vol.margins(y=0.10)
+        ax_price.relim(); ax_price.autoscale_view()
+        ax_vol.relim(); ax_vol.autoscale_view()
+
+        sym = (self.symbol_var.get() or DEFAULT_SYMBOL).upper()
+        iv = self.interval_var.get() or '1m'
+        ax_price.set_title(f"{sym} – {iv} Candlesticks")
         self.figure.tight_layout()
         self.canvas.draw_idle()
 
