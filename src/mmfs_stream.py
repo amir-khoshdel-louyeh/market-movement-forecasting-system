@@ -37,6 +37,28 @@ class TickerMessage(BaseModel):
     F: int | None = None  # first trade id
     L: int | None = None  # last trade id
     n: int | None = None  # total number of trades
+class KlinePayload(BaseModel):
+    t: int  # kline start time (ms)
+    T: int  # kline close time (ms)
+    s: str  # symbol
+    i: str  # interval, e.g. 1m
+    f: int  # first trade ID
+    L: int  # last trade ID
+    o: str  # open price
+    c: str  # close price
+    h: str  # high price
+    l: str  # low price
+    v: str  # base asset volume
+    n: int  # number of trades
+    x: bool  # is this kline closed?
+
+
+class KlineMessage(BaseModel):
+    e: str  # event type, 'kline'
+    E: int  # event time
+    s: str  # symbol
+    k: KlinePayload
+
 
 
 @dataclass
@@ -77,6 +99,58 @@ async def stream_ticker(cfg: StreamConfig):
                         }
                     )
                 )
+        except websockets.ConnectionClosedError as e:
+            print(f"Connection closed, retrying: {e}")
+            await asyncio.sleep(2)
+            continue
+        except Exception as e:
+            print(f"Error: {e}")
+            await asyncio.sleep(2)
+            continue
+
+
+async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None):
+    """Stream kline (candlestick) data and optionally pass each message to a callback.
+
+    If `on_kline` is provided, it will be called with a `KlineMessage`.
+    Otherwise, print normalized JSON lines.
+    """
+    url = f"{BINANCE_WS_URL}/{cfg.symbol}@kline_{interval}"
+    print(f"Connecting to {url}")
+    async for ws in websockets.connect(url, ping_interval=20, ping_timeout=20):
+        try:
+            print("Connected. Streaming klines...")
+            async for msg in ws:
+                data = json.loads(msg)
+                try:
+                    kmsg = KlineMessage(**data)
+                except Exception:
+                    print(f"Raw: {data}")
+                    continue
+
+                if on_kline is not None:
+                    try:
+                        on_kline(kmsg)
+                    except Exception as cb_err:
+                        print(f"on_kline error: {cb_err}")
+                else:
+                    print(
+                        json.dumps(
+                            {
+                                "event_time": kmsg.E,
+                                "symbol": kmsg.s,
+                                "interval": kmsg.k.i,
+                                "open_time": kmsg.k.t,
+                                "close_time": kmsg.k.T,
+                                "open": kmsg.k.o,
+                                "high": kmsg.k.h,
+                                "low": kmsg.k.l,
+                                "close": kmsg.k.c,
+                                "volume": kmsg.k.v,
+                                "closed": kmsg.k.x,
+                            }
+                        )
+                    )
         except websockets.ConnectionClosedError as e:
             print(f"Connection closed, retrying: {e}")
             await asyncio.sleep(2)
