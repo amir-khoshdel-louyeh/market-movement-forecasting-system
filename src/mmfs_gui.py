@@ -5,7 +5,7 @@ import random
 import threading
 import asyncio
 import queue
-
+import time
 import pandas as pd
 import mplfinance as mpf
 from matplotlib.figure import Figure
@@ -40,9 +40,13 @@ class CandlesApp(ttk.Frame):
         self.master.title("MMFS – Candlestick Viewer (stub)")
         self.pack(fill=tk.BOTH, expand=True)
 
+        # DataFrame holds OHLCV indexed by kline open time
         self.df = _generate_sample_candles(60)
         self._queue: queue.Queue = queue.Queue()
         self._stream_thread: threading.Thread | None = None
+        self.max_rows = 300
+        self._last_plot_ms = 0
+        self._plot_interval_ms = 1000
 
         # Top controls
         controls = ttk.Frame(self)
@@ -110,21 +114,16 @@ class CandlesApp(ttk.Frame):
 
     def _drain_queue(self):
         updated = False
+        closed_arrived = False
         try:
             while True:
                 kmsg = self._queue.get_nowait()
                 k = kmsg.k
                 # Use kline open time as index
                 dt = datetime.fromtimestamp(k.t / 1000)
-                row = {
-                    "Open": float(k.o),
-                    "High": float(k.h),
-                    "Low": float(k.l),
-                    "Close": float(k.c),
-                    "Volume": float(k.v),
-                }
-                # Insert or update row
-                self.df.loc[dt] = row
+                self._upsert_kline(dt, k)
+                if k.x:
+                    closed_arrived = True
                 updated = True
         except queue.Empty:
             pass
@@ -132,12 +131,44 @@ class CandlesApp(ttk.Frame):
         if updated:
             # Ensure datetime index is sorted
             self.df = self.df.sort_index()
-            # Replot with latest data
-            self._replot()
+            # Keep only most recent rows
+            if len(self.df) > self.max_rows:
+                self.df = self.df.tail(self.max_rows)
+            now_ms = int(time.time() * 1000)
+            # Replot when a candle closes or on throttle interval
+            if closed_arrived or (now_ms - self._last_plot_ms) >= self._plot_interval_ms:
+                self._replot()
+                self._last_plot_ms = now_ms
 
         # Keep polling while streaming
         if self._stream_thread and self._stream_thread.is_alive():
             self.after(500, self._drain_queue)
+
+    def _upsert_kline(self, dt: datetime, k):
+        """Update or insert OHLCV for a given kline.
+
+        - Preserve the original Open when updating an in-progress candle.
+        - Update High/Low with extremes, Close with latest, Volume with latest cumulative.
+        """
+        new = {
+            "Open": float(k.o),
+            "High": float(k.h),
+            "Low": float(k.l),
+            "Close": float(k.c),
+            "Volume": float(k.v),
+        }
+        if dt in self.df.index:
+            old = self.df.loc[dt]
+            merged = {
+                "Open": float(old["Open"]),
+                "High": max(float(old["High"]), new["High"]),
+                "Low": min(float(old["Low"]), new["Low"]),
+                "Close": new["Close"],
+                "Volume": new["Volume"],  # Binance kline volume is cumulative within candle
+            }
+            self.df.loc[dt] = merged
+        else:
+            self.df.loc[dt] = new
 
 
 def launch_gui():
