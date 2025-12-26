@@ -4,3 +4,4 @@ python-dotenv>=1.0
 pandas>=2.2
 matplotlib>=3.8
 mplfinance>=0.12.10b0
+Flask>=3.0
