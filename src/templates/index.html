@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MMFS – Web Candles</title>
+  <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
+    header { padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center; }
+    #chart { width: 100%; height: calc(100vh - 56px); }
+    input, select, button { padding: 6px 8px; }
+    label { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<header>
+  <label>Symbol <input id="symbol" value="{{ symbol }}" /></label>
+  <label>Interval
+    <select id="interval">
+      <option value="1m" {% if interval == '1m' %}selected{% endif %}>1m</option>
+      <option value="5m" {% if interval == '5m' %}selected{% endif %}>5m</option>
+      <option value="15m" {% if interval == '15m' %}selected{% endif %}>15m</option>
+      <option value="1h" {% if interval == '1h' %}selected{% endif %}>1h</option>
+    </select>
+  </label>
+  <button id="start">Start</button>
+  <span id="status" style="margin-left:8px;color:#666;font-size:0.9rem"></span>
+</header>
+<div id="chart"></div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
