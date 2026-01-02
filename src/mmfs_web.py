@@ -8,6 +8,7 @@ from typing import List
 
 import pandas as pd
 from flask import Flask, Response, request, jsonify, render_template
+import requests
 
 from .mmfs_stream import StreamConfig, stream_kline, DEFAULT_SYMBOL
 
@@ -92,6 +93,30 @@ def _start_stream(symbol: str, interval: str):
     state.stream_thread.start()
 
 
+def _seed_history(symbol: str, interval: str, limit: int = 50):
+    """Fetch recent klines from Binance REST and seed server state.
+
+    Uses open time as the index. Volume is cumulative for each candle.
+    """
+    try:
+        url = "https://api.binance.com/api/v3/klines"
+        params = {"symbol": symbol.upper(), "interval": interval, "limit": int(limit)}
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        rows = []
+        for k in data:
+            # [openTime, open, high, low, close, volume, closeTime, ...]
+            ot, o, h, l, c, v = k[0], k[1], k[2], k[3], k[4], k[5]
+            dt = datetime.fromtimestamp(ot / 1000)
+            rows.append((dt, float(o), float(h), float(l), float(c), float(v)))
+        df = pd.DataFrame(rows, columns=["Date", "Open", "High", "Low", "Close", "Volume"]).set_index("Date")
+        with state.lock:
+            state.df = df.tail(state.max_rows)
+    except Exception as e:
+        print(f"Seed history failed: {e}")
+
+
 @app.route("/")
 def index():
     return render_template("index.html", symbol=state.symbol, interval=state.interval)
@@ -151,7 +176,8 @@ def sse_events():
 
 
 def run_web(host: str = "127.0.0.1", port: int = 5000):
-    # Start default stream on startup
+    # Seed last 50 candles for default symbol/interval, then start stream
+    _seed_history(state.symbol, state.interval, limit=50)
     _start_stream(state.symbol, state.interval)
     app.run(host=host, port=port, debug=False, threaded=True)
 
