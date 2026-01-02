@@ -72,7 +72,8 @@ def _start_stream(symbol: str, interval: str):
 
     def on_kline(kmsg):
         k = kmsg.k
-        dt = datetime.fromtimestamp(k.t / 1000)
+        # Use UTC to avoid local-time shifts; keep ms epoch for clients
+        dt = pd.to_datetime(k.t, unit='ms', utc=True)
         state.upsert_kline(dt, k)
         event = {
             "t": int(k.t),
@@ -108,7 +109,7 @@ def _seed_history(symbol: str, interval: str, limit: int = 50):
         for k in data:
             # [openTime, open, high, low, close, volume, closeTime, ...]
             ot, o, h, l, c, v = k[0], k[1], k[2], k[3], k[4], k[5]
-            dt = datetime.fromtimestamp(ot / 1000)
+            dt = pd.to_datetime(ot, unit='ms', utc=True)
             rows.append((dt, float(o), float(h), float(l), float(c), float(v)))
         df = pd.DataFrame(rows, columns=["Date", "Open", "High", "Low", "Close", "Volume"]).set_index("Date")
         with state.lock:
@@ -136,8 +137,10 @@ def api_candles():
     # Return full DF as array of dicts with iso datetime
     records = []
     for dt, row in state.df.iterrows():
+        # dt is a pandas Timestamp (UTC). Use its ns value to avoid tz issues.
+        t_ms = int(pd.Timestamp(dt).value // 1_000_000)
         records.append({
-            "t": int(dt.timestamp() * 1000),
+            "t": t_ms,
             "o": float(row["Open"]),
             "h": float(row["High"]),
             "l": float(row["Low"]),
