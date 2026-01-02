@@ -5,3 +5,4 @@ pandas>=2.2
 matplotlib>=3.8
 mplfinance>=0.12.10b0
 Flask>=3.0
+requests>=2.32
