@@ -3,13 +3,19 @@
   const statusEl = document.getElementById('status');
   const symbolEl = document.getElementById('symbol');
   const intervalEl = document.getElementById('interval');
-  const startBtn = document.getElementById('start');
+
+  let currentSymbol = (symbolEl.value || '').trim().toLowerCase();
+  let currentInterval = intervalEl.value;
 
   let x = [], o = [], h = [], l = [], c = [], v = [];
   let es = null;
 
   const GREEN = 'rgba(22,163,74,0.6)';
   const RED   = 'rgba(239,68,68,0.6)';
+
+  function setStatus(msg){
+    statusEl.textContent = msg;
+  }
 
   function volumeColors(){
     return x.map((_, i) => (c[i] >= o[i] ? GREEN : RED));
@@ -61,18 +67,25 @@
   async function loadInitial(){
     const res = await fetch('/api/candles');
     const js = await res.json();
+    currentSymbol = (js.symbol || currentSymbol || '').toLowerCase();
+    currentInterval = js.interval || currentInterval;
+    if(currentSymbol) symbolEl.value = currentSymbol;
+    if(currentInterval) intervalEl.value = currentInterval;
     const arr = js.candles || [];
     x = []; o = []; h = []; l = []; c = []; v = [];
     for(const r of arr){
       const dt = new Date(r.t);
       x.push(dt); o.push(r.o); h.push(r.h); l.push(r.l); c.push(r.c); v.push(r.v);
     }
+    setStatus(`Loaded ${currentSymbol} ${currentInterval}`);
     render();
   }
 
   function startStream(){
     if(es){ es.close(); es = null; }
+    setStatus('Connecting to stream…');
     es = new EventSource('/events');
+    es.onopen = function(){ setStatus(`Streaming ${currentSymbol} ${currentInterval}`); };
     es.onmessage = function(ev){
       try{
         const m = JSON.parse(ev.data);
@@ -90,21 +103,11 @@
         } else {
           append(dt, m.o, m.h, m.l, m.c, m.v);
         }
-        statusEl.textContent = m.closed ? 'Closed candle' : 'Live…';
+        setStatus(m.closed ? 'Closed candle' : 'Live…');
       }catch(e){ console.warn('SSE parse/update error', e); }
     };
-    es.onerror = function(){ statusEl.textContent = 'Stream error'; };
+    es.onerror = function(){ setStatus('Stream error'); };
   }
-
-  startBtn.addEventListener('click', async function(){
-    const symbol = symbolEl.value.trim().toLowerCase();
-    const interval = intervalEl.value;
-    const res = await fetch('/start', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ symbol, interval }) });
-    const js = await res.json();
-    await loadInitial();
-    startStream();
-    statusEl.textContent = `Streaming ${js.symbol} ${js.interval}`;
-  });
 
   // Initial load and start stream on page open
   loadInitial().then(startStream);
