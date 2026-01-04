@@ -15,7 +15,15 @@
 </head>
 <body>
 <header>
-  <label>Symbol <input id="symbol" value="{{ symbol }}" /></label>
+  <label>Symbol
+    <select id="symbol">
+      <option value="btcusdt" {% if symbol == 'btcusdt' %}selected{% endif %}>BTCUSDT</option>
+      <option value="ethusdt" {% if symbol == 'ethusdt' %}selected{% endif %}>ETHUSDT</option>
+      <option value="bnbusdt" {% if symbol == 'bnbusdt' %}selected{% endif %}>BNBUSDT</option>
+      <option value="solusdt" {% if symbol == 'solusdt' %}selected{% endif %}>SOLUSDT</option>
+      <option value="adausdt" {% if symbol == 'adausdt' %}selected{% endif %}>ADAUSDT</option>
+    </select>
+  </label>
   <label>Interval
     <select id="interval">
       <option value="1m" {% if interval == '1m' %}selected{% endif %}>1m</option>

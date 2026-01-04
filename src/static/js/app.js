@@ -109,6 +109,30 @@
     es.onerror = function(){ setStatus('Stream error'); };
   }
 
+  async function applySelection(){
+    try{
+      const symbol = (symbolEl.value || '').trim().toLowerCase();
+      const interval = intervalEl.value;
+      currentSymbol = symbol;
+      currentInterval = interval;
+      setStatus('Updating selection…');
+      const res = await fetch('/start', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ symbol, interval }) });
+      const js = await res.json();
+      currentSymbol = (js.symbol || symbol).toLowerCase();
+      currentInterval = js.interval || interval;
+      if(currentSymbol) symbolEl.value = currentSymbol;
+      if(currentInterval) intervalEl.value = currentInterval;
+      await loadInitial();
+      startStream();
+    }catch(e){
+      console.warn('Apply selection failed', e);
+      setStatus('Update failed');
+    }
+  }
+
+  symbolEl.addEventListener('change', applySelection);
+  intervalEl.addEventListener('change', applySelection);
+
   // Initial load and start stream on page open
   loadInitial().then(startStream);
 })();
