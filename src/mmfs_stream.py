@@ -109,53 +109,68 @@ async def stream_ticker(cfg: StreamConfig):
             continue
 
 
-async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None):
-    """Stream kline (candlestick) data and optionally pass each message to a callback.
+async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None, stop_event=None):
+    """Stream kline data, supporting a cooperative stop via `stop_event`.
 
-    If `on_kline` is provided, it will be called with a `KlineMessage`.
-    Otherwise, print normalized JSON lines.
+    If `on_kline` is provided, it will be called with a `KlineMessage`; otherwise print normalized JSON lines.
     """
     url = f"{BINANCE_WS_URL}/{cfg.symbol}@kline_{interval}"
     print(f"Connecting to {url}")
-    async for ws in websockets.connect(url, ping_interval=20, ping_timeout=20):
-        try:
-            print("Connected. Streaming klines...")
-            async for msg in ws:
-                data = json.loads(msg)
-                try:
-                    kmsg = KlineMessage(**data)
-                except Exception:
-                    print(f"Raw: {data}")
-                    continue
 
-                if on_kline is not None:
+    while True:
+        if stop_event and stop_event.is_set():
+            return
+        try:
+            async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                print("Connected. Streaming klines...")
+                while True:
+                    if stop_event and stop_event.is_set():
+                        await ws.close()
+                        return
                     try:
-                        on_kline(kmsg)
-                    except Exception as cb_err:
-                        print(f"on_kline error: {cb_err}")
-                else:
-                    print(
-                        json.dumps(
-                            {
-                                "event_time": kmsg.E,
-                                "symbol": kmsg.s,
-                                "interval": kmsg.k.i,
-                                "open_time": kmsg.k.t,
-                                "close_time": kmsg.k.T,
-                                "open": kmsg.k.o,
-                                "high": kmsg.k.h,
-                                "low": kmsg.k.l,
-                                "close": kmsg.k.c,
-                                "volume": kmsg.k.v,
-                                "closed": kmsg.k.x,
-                            }
+                        msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+
+                    data = json.loads(msg)
+                    try:
+                        kmsg = KlineMessage(**data)
+                    except Exception:
+                        print(f"Raw: {data}")
+                        continue
+
+                    if on_kline is not None:
+                        try:
+                            on_kline(kmsg)
+                        except Exception as cb_err:
+                            print(f"on_kline error: {cb_err}")
+                    else:
+                        print(
+                            json.dumps(
+                                {
+                                    "event_time": kmsg.E,
+                                    "symbol": kmsg.s,
+                                    "interval": kmsg.k.i,
+                                    "open_time": kmsg.k.t,
+                                    "close_time": kmsg.k.T,
+                                    "open": kmsg.k.o,
+                                    "high": kmsg.k.h,
+                                    "low": kmsg.k.l,
+                                    "close": kmsg.k.c,
+                                    "volume": kmsg.k.v,
+                                    "closed": kmsg.k.x,
+                                }
+                            )
                         )
-                    )
         except websockets.ConnectionClosedError as e:
+            if stop_event and stop_event.is_set():
+                return
             print(f"Connection closed, retrying: {e}")
             await asyncio.sleep(2)
             continue
         except Exception as e:
+            if stop_event and stop_event.is_set():
+                return
             print(f"Error: {e}")
             await asyncio.sleep(2)
             continue

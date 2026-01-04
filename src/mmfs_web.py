@@ -20,6 +20,7 @@ class WebState:
         self.subscribers: List[queue.Queue] = []
         self.lock = threading.Lock()
         self.stream_thread: threading.Thread | None = None
+        self.stop_event: threading.Event = threading.Event()
         self.symbol: str = DEFAULT_SYMBOL
         self.interval: str = "1m"
         self.max_rows: int = 500
@@ -64,11 +65,19 @@ def _publish(event: dict):
 
 def _start_stream(symbol: str, interval: str):
     if state.stream_thread and state.stream_thread.is_alive():
-        # If same config, do nothing; else we could implement restart (simple: ignore for now)
-        return
+        # If config unchanged, keep running; else request stop and restart.
+        if state.symbol == symbol and state.interval == interval:
+            return
+        state.stop_event.set()
+        state.stream_thread.join(timeout=3)
 
+    # Prepare fresh stop flag and config
+    state.stop_event = threading.Event()
     state.symbol = symbol
     state.interval = interval
+
+    # Seed history for the newly selected symbol/interval so the UI loads matching candles
+    _seed_history(symbol, interval, limit=50)
 
     def on_kline(kmsg):
         k = kmsg.k
@@ -88,7 +97,7 @@ def _start_stream(symbol: str, interval: str):
 
     def run():
         cfg = StreamConfig(symbol=symbol)
-        asyncio.run(stream_kline(cfg, interval=interval, on_kline=on_kline))
+        asyncio.run(stream_kline(cfg, interval=interval, on_kline=on_kline, stop_event=state.stop_event))
 
     state.stream_thread = threading.Thread(target=run, daemon=True)
     state.stream_thread.start()
