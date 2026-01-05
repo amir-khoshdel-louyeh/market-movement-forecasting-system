@@ -3,6 +3,13 @@
   const statusEl = document.getElementById('status');
   const symbolEl = document.getElementById('symbol');
   const intervalEl = document.getElementById('interval');
+   const btnZoomIn = document.getElementById('btn-zoom-in');
+   const btnZoomOut = document.getElementById('btn-zoom-out');
+   const btnZoomBox = document.getElementById('btn-zoom-box');
+   const btnPan = document.getElementById('btn-pan');
+   const btnSelect = document.getElementById('btn-select');
+   const btnLasso = document.getElementById('btn-lasso');
+   const btnReset = document.getElementById('btn-reset');
 
   let currentSymbol = (symbolEl.value || '').trim().toLowerCase();
   let currentInterval = intervalEl.value;
@@ -48,7 +55,8 @@
       type: 'bar', x, y: v, marker: { color: volumeColors() }, opacity: 0.7,
       xaxis: 'x2', yaxis: 'y2', name: 'Volume'
     };
-    Plotly.newPlot(chartEl, [candles, volume], layout(), { responsive: true, displayModeBar: true });
+    Plotly.newPlot(chartEl, [candles, volume], layout(), { responsive: true, displayModeBar: false });
+     applyDragMode('zoom');
   }
 
   function updateLast(){
@@ -132,6 +140,78 @@
 
   symbolEl.addEventListener('change', applySelection);
   intervalEl.addEventListener('change', applySelection);
+
+   function normalizeRangeValue(v){
+     if(v instanceof Date){ return v.getTime(); }
+     if(typeof v === 'string'){ const d = new Date(v); return d.getTime(); }
+     return v;
+   }
+
+   function currentXRange(){
+     const layout = chartEl._fullLayout;
+     if(layout && layout.xaxis && layout.xaxis.range){
+       const r = layout.xaxis.range.map(normalizeRangeValue);
+       if(!Number.isNaN(r[0]) && !Number.isNaN(r[1])) return r;
+     }
+     if(x.length >= 2){
+       return [x[0].getTime(), x[x.length - 1].getTime()];
+     }
+     return null;
+   }
+
+   function scaleRange(range, factor){
+     const [a, b] = range;
+     const center = (a + b) / 2;
+     const half = (b - a) / 2 * factor;
+     return [center - half, center + half];
+   }
+
+   function relayoutX(range){
+     Plotly.relayout(chartEl, { 'xaxis.range': range, 'xaxis.autorange': false });
+   }
+
+   function zoomIn(){
+     const r = currentXRange();
+     if(!r) return;
+     relayoutX(scaleRange(r, 0.8));
+   }
+
+   function zoomOut(){
+     const r = currentXRange();
+     if(!r) return;
+     relayoutX(scaleRange(r, 1 / 0.8));
+   }
+
+   function resetAxes(){
+     Plotly.relayout(chartEl, { 'xaxis.autorange': true, 'yaxis.autorange': true });
+   }
+
+   const modeButtons = {
+     zoom: btnZoomBox,
+     pan: btnPan,
+     select: btnSelect,
+     lasso: btnLasso,
+   };
+
+   function setActiveButton(mode){
+     Object.entries(modeButtons).forEach(([m, btn]) => {
+       if(!btn) return;
+       btn.classList.toggle('active', m === mode);
+     });
+   }
+
+   function applyDragMode(mode){
+     Plotly.relayout(chartEl, { dragmode: mode });
+     setActiveButton(mode);
+   }
+
+   btnZoomIn?.addEventListener('click', zoomIn);
+   btnZoomOut?.addEventListener('click', zoomOut);
+   btnReset?.addEventListener('click', resetAxes);
+   btnZoomBox?.addEventListener('click', () => applyDragMode('zoom'));
+   btnPan?.addEventListener('click', () => applyDragMode('pan'));
+   btnSelect?.addEventListener('click', () => applyDragMode('select'));
+   btnLasso?.addEventListener('click', () => applyDragMode('lasso'));
 
   // Initial load and start stream on page open
   loadInitial().then(startStream);

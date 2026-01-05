@@ -6,11 +6,16 @@
   <title>MMFS – Web Candles</title>
   <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
-    header { padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center; }
-    #chart { width: 100%; height: calc(100vh - 56px); }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .layout { display: flex; height: calc(100vh - 56px); }
+    #sidebar { width: 140px; border-right: 1px solid #eee; background: #f7f8fb; padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+    #chart { flex: 1; height: 100%; }
     input, select, button { padding: 6px 8px; }
     label { font-size: 0.9rem; }
+    .tool-btn { width: 100%; text-align: left; border: 1px solid #d5d7df; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .tool-btn:hover { background: #f0f2f7; }
+    .tool-btn.active { border-color: #2563eb; background: #e8f0fe; }
   </style>
 </head>
 <body>
@@ -37,7 +42,18 @@
   </label>
   <span id="status" style="margin-left:8px;color:#666;font-size:0.9rem"></span>
 </header>
-<div id="chart"></div>
+<div class="layout">
+  <aside id="sidebar">
+    <button class="tool-btn" id="btn-zoom-in">Zoom In</button>
+    <button class="tool-btn" id="btn-zoom-out">Zoom Out</button>
+    <button class="tool-btn" id="btn-zoom-box">Zoom Box</button>
+    <button class="tool-btn" id="btn-pan">Pan</button>
+    <button class="tool-btn" id="btn-select">Box Select</button>
+    <button class="tool-btn" id="btn-lasso">Lasso</button>
+    <button class="tool-btn" id="btn-reset">Reset Axes</button>
+  </aside>
+  <div id="chart"></div>
+</div>
 <script src="/static/js/app.js"></script>
 </body>
 </html>
