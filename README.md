@@ -21,9 +21,6 @@ python3 main.py btcusdt
 # Web UI: start Flask front-end
 python3 main.py --mode web
 
-# CLI: start CLI directly
-python3 main.py --mode cli
-
 # Option B: install console script, then run
 pip install -e .
 mmfs-stream btcusdt
