@@ -18,6 +18,9 @@ pip3 install -r ./requirements.txt
 # Option A: via main.py (no install needed)
 python3 main.py btcusdt
 
+# Web UI: start Flask front-end
+python3 main.py --mode web
+
 # Option B: install console script, then run
 pip install -e .
 mmfs-stream btcusdt
