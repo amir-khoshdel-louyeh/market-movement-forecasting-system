@@ -55,7 +55,10 @@
       type: 'bar', x, y: v, marker: { color: volumeColors() }, opacity: 0.7,
       xaxis: 'x2', yaxis: 'y2', name: 'Volume'
     };
-    Plotly.newPlot(chartEl, [candles, volume], layout(), { responsive: true, displayModeBar: false });
+    const plotLayout = layout();
+    plotLayout.width = 1600;
+    plotLayout.height = 800;
+    Plotly.newPlot(chartEl, [candles, volume], plotLayout, { responsive: false, displayModeBar: false });
      applyDragMode('zoom');
   }
 
