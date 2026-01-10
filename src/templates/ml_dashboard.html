@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MMFS – ML Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; 
+      margin: 0; 
+      background: #f5f7fa;
+    }
+    header { 
+      background: #fff; 
+      padding: 16px 24px; 
+      border-bottom: 2px solid #e5e7eb; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    h1 { margin: 0; font-size: 1.5rem; color: #1f2937; }
+    nav { margin-top: 12px; }
+    nav a { 
+      text-decoration: none; 
+      color: #6b7280; 
+      margin-right: 20px; 
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    nav a:hover { background: #f3f4f6; color: #1f2937; }
+    nav a.active { background: #2563eb; color: #fff; }
+    
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .card { 
+      background: #fff; 
+      border-radius: 8px; 
+      padding: 20px; 
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card h2 { margin-top: 0; color: #1f2937; font-size: 1.25rem; }
+    
+    .stats-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+      gap: 16px; 
+      margin-bottom: 24px;
+    }
+    .stat-card { 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      padding: 20px; 
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .stat-label { font-size: 0.875rem; opacity: 0.9; margin-bottom: 8px; }
+    .stat-value { font-size: 2rem; font-weight: bold; }
+    
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: #f9fafb; font-weight: 600; color: #374151; }
+    tr:hover { background: #f9fafb; }
+    
+    .badge { 
+      display: inline-block; 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      font-size: 0.75rem; 
+      font-weight: 600;
+    }
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    
+    .btn { 
+      padding: 8px 16px; 
+      border: none; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary { background: #6b7280; color: #fff; }
+    .btn-secondary:hover { background: #4b5563; }
+    
+    .prediction-result {
+      margin-top: 16px;
+      padding: 16px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 6px;
+    }
+    .loading { color: #6b7280; font-style: italic; }
+    .error { color: #dc2626; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>🤖 Market Movement Forecasting System</h1>
+  <nav>
+    <a href="/">Charts</a>
+    <a href="/ml" class="active">ML Dashboard</a>
+  </nav>
+</header>
+
+<div class="container">
+  <!-- Stats Overview -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Models</div>
+      <div class="stat-value" id="stat-models">-</div>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+      <div class="stat-label">Total Predictions</div>
+      <div class="stat-value" id="stat-predictions">-</div>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+      <div class="stat-label">Avg Accuracy</div>
+      <div class="stat-value" id="stat-accuracy">-</div>
+    </div>
+  </div>
+
+  <!-- Make Prediction -->
+  <div class="card">
+    <h2>Make Prediction</h2>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <label>
+        <input type="checkbox" id="use-ensemble"> Use Ensemble (Top 3 Models)
+      </label>
+      <button class="btn btn-primary" onclick="makePrediction()">Predict Now</button>
+      <button class="btn btn-secondary" onclick="loadData()">Refresh Data</button>
+    </div>
+    <div id="prediction-output"></div>
+  </div>
+
+  <!-- Models List -->
+  <div class="card">
+    <h2>Registered Models</h2>
+    <div id="models-list" class="loading">Loading models...</div>
+  </div>
+
+  <!-- Performance Metrics -->
+  <div class="card">
+    <h2>Model Performance by Market Condition</h2>
+    <div id="performance-list" class="loading">Loading performance data...</div>
+  </div>
+
+  <!-- Recent Predictions -->
+  <div class="card">
+    <h2>Recent Predictions</h2>
+    <div id="predictions-list" class="loading">Loading predictions...</div>
+  </div>
+</div>
+
+<script>
+async function loadData() {
+  await Promise.all([
+    loadModels(),
+    loadPerformance(),
+    loadPredictions(),
+    loadStats()
+  ]);
+}
+
+async function loadStats() {
+  try {
+    const [modelsRes, predsRes, perfRes] = await Promise.all([
+      fetch('/api/models'),
+      fetch('/api/predictions?limit=1000'),
+      fetch('/api/performance')
+    ]);
+    
+    const models = await modelsRes.json();
+    const preds = await predsRes.json();
+    const perf = await perfRes.json();
+    
+    document.getElementById('stat-models').textContent = models.models?.length || 0;
+    document.getElementById('stat-predictions').textContent = preds.predictions?.length || 0;
+    
+    // Calculate average accuracy
+    let totalAcc = 0, count = 0;
+    if (perf.ok && perf.performance) {
+      perf.performance.forEach(p => {
+        p.performance.forEach(m => {
+          if (m.accuracy > 0) {
+            totalAcc += m.accuracy;
+            count++;
+          }
+        });
+      });
+    }
+    const avgAcc = count > 0 ? (totalAcc / count * 100).toFixed(1) + '%' : 'N/A';
+    document.getElementById('stat-accuracy').textContent = avgAcc;
+  } catch (e) {
+    console.error('Stats error:', e);
+  }
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch('/api/models');
+    const data = await res.json();
+    
+    if (!data.ok || !data.models || data.models.length === 0) {
+      document.getElementById('models-list').innerHTML = '<p>No models registered yet.</p>';
+      return;
+    }
+    
+    const html = `
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Version</th>
+            <th>Trained At</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.models.map(m => `
+            <tr>
+              <td>${m.id}</td>
+              <td><strong>${m.name}</strong></td>
+              <td><span class="badge badge-info">${m.type}</span></td>
+              <td>${m.version}</td>
+              <td>${m.trained_at ? new Date(m.trained_at).toLocaleString() : 'N/A'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    document.getElementById('models-list').innerHTML = html;
+  } catch (e) {
+    document.getElementById('models-list').innerHTML = `<p class="error">Error loading models: ${e.message}</p>`;
+  }
+}
+
+async function loadPerformance() {
+  try {
+    const res = await fetch('/api/performance');
+    const data = await res.json();
+    
+    if (!data.ok || !data.performance || data.performance.length === 0) {
+      document.getElementById('performance-list').innerHTML = '<p>No performance data available yet.</p>';
+      return;
+    }
+    
+    let html = '';
+    data.performance.forEach(item => {
+      const model = item.model;
+      const perfs = item.performance;
+      
+      if (perfs.length === 0) return;
+      
+      html += `
+        <h3 style="margin-top: 16px;">${model.name} (${model.type})</h3>
+        <table style="margin-bottom: 20px;">
+          <thead>
+            <tr>
+              <th>Market Condition</th>
+              <th>Symbol</th>
+              <th>Interval</th>
+              <th>Accuracy</th>
+              <th>Total / Correct</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${perfs.map(p => `
+              <tr>
+                <td><span class="badge badge-warning">${p.market_condition || 'unknown'}</span></td>
+                <td>${p.symbol}</td>
+                <td>${p.interval}</td>
+                <td><strong>${(p.accuracy * 100).toFixed(1)}%</strong></td>
+                <td>${p.correct_predictions} / ${p.total_predictions}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    });
+    
+    document.getElementById('performance-list').innerHTML = html || '<p>No performance metrics available.</p>';
+  } catch (e) {
+    document.getElementById('performance-list').innerHTML = `<p class="error">Error loading performance: ${e.message}</p>`;
+  }
+}
+
+async function loadPredictions() {
+  try {
+    const res = await fetch('/api/predictions?limit=20');
+    const data = await res.json();
+    
+    if (!data.ok || !data.predictions || data.predictions.length === 0) {
+      document.getElementById('predictions-list').innerHTML = '<p>No predictions yet.</p>';
+      return;
+    }
+    
+    const html = `
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Model ID</th>
+            <th>Symbol</th>
+            <th>Prediction</th>
+            <th>Confidence</th>
+            <th>Actual</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.predictions.map(p => {
+            const correct = p.actual_result && p.actual_result === p.prediction;
+            const resultBadge = p.actual_result 
+              ? `<span class="badge ${correct ? 'badge-success' : 'badge-warning'}">${p.actual_result}</span>`
+              : '<span style="color: #9ca3af;">Pending</span>';
+            
+            return `
+              <tr>
+                <td>${new Date(p.timestamp).toLocaleString()}</td>
+                <td>${p.model_id}</td>
+                <td>${p.symbol}</td>
+                <td><strong>${p.prediction}</strong></td>
+                <td>${(p.confidence * 100).toFixed(0)}%</td>
+                <td>${resultBadge}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+    document.getElementById('predictions-list').innerHTML = html;
+  } catch (e) {
+    document.getElementById('predictions-list').innerHTML = `<p class="error">Error loading predictions: ${e.message}</p>`;
+  }
+}
+
+async function makePrediction() {
+  const output = document.getElementById('prediction-output');
+  const useEnsemble = document.getElementById('use-ensemble').checked;
+  
+  output.innerHTML = '<div class="prediction-result loading">Making prediction...</div>';
+  
+  try {
+    const res = await fetch('/api/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ensemble: useEnsemble })
+    });
+    
+    const data = await res.json();
+    
+    if (!data.ok) {
+      output.innerHTML = `<div class="prediction-result error">Error: ${data.error}</div>`;
+      return;
+    }
+    
+    const pred = data.prediction;
+    const isEnsemble = pred.method === 'ensemble';
+    
+    let html = `
+      <div class="prediction-result">
+        <h3 style="margin-top: 0;">Prediction Result</h3>
+        <p><strong>Prediction:</strong> <span style="font-size: 1.5rem; color: #2563eb;">${pred.prediction.toUpperCase()}</span></p>
+        <p><strong>Confidence:</strong> ${(pred.confidence * 100).toFixed(1)}%</p>
+        <p><strong>Market Condition:</strong> <span class="badge badge-warning">${pred.market_condition}</span></p>
+    `;
+    
+    if (isEnsemble) {
+      html += `
+        <p><strong>Method:</strong> Ensemble (${pred.contributing_models.length} models)</p>
+        <p><strong>Votes:</strong> UP: ${(pred.ensemble_votes.up * 100).toFixed(0)}%, 
+           DOWN: ${(pred.ensemble_votes.down * 100).toFixed(0)}%, 
+           NEUTRAL: ${(pred.ensemble_votes.neutral * 100).toFixed(0)}%</p>
+      `;
+    } else {
+      html += `
+        <p><strong>Selected Model:</strong> ${pred.model_name} (ID: ${pred.model_id}, Type: ${pred.model_type})</p>
+      `;
+    }
+    
+    html += '</div>';
+    output.innerHTML = html;
+    
+    // Refresh predictions list
+    await loadPredictions();
+    await loadStats();
+  } catch (e) {
+    output.innerHTML = `<div class="prediction-result error">Error: ${e.message}</div>`;
+  }
+}
+
+// Initial load
+loadData();
+
+// Auto-refresh every 30 seconds
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>
