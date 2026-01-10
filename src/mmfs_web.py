@@ -6,11 +6,16 @@ import time
 from datetime import datetime
 from typing import List
 
+import numpy as np
 import pandas as pd
 from flask import Flask, Response, request, jsonify, render_template
 import requests
 
 from .mmfs_stream import StreamConfig, stream_kline, DEFAULT_SYMBOL
+from .model_registry import ModelRegistry
+from .prediction_logger import PredictionLogger
+from .performance_tracker import PerformanceTracker
+from .aggregate_selector import AggregateModelSelector
 
 
 class WebState:
@@ -185,6 +190,102 @@ def sse_events():
                     state.subscribers.remove(q)
 
     return Response(gen(), mimetype="text/event-stream")
+
+
+# ML Prediction API Endpoints
+
+@app.route("/api/models")
+def api_models():
+    """List all registered models."""
+    try:
+        registry = ModelRegistry()
+        models = registry.list_models()
+        return jsonify({"ok": True, "models": models})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    """Make a prediction using the best model for current conditions."""
+    try:
+        data = request.get_json() or {}
+        symbol = data.get("symbol", state.symbol).lower()
+        interval = data.get("interval", state.interval)
+        use_ensemble = data.get("ensemble", False)
+        
+        # Get recent candle data
+        with state.lock:
+            if state.df.empty:
+                return jsonify({"ok": False, "error": "No candle data available"}), 400
+            
+            candles_array = state.df[["Open", "High", "Low", "Close", "Volume"]].values
+        
+        # Make prediction
+        selector = AggregateModelSelector()
+        
+        if use_ensemble:
+            result = selector.get_ensemble_prediction(symbol, interval, candles_array)
+        else:
+            result = selector.predict(symbol, interval, candles_array, log_prediction=True)
+        
+        return jsonify({"ok": True, "prediction": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/performance")
+def api_performance():
+    """Get performance metrics for all models."""
+    try:
+        symbol = request.args.get("symbol", state.symbol).lower()
+        interval = request.args.get("interval", state.interval)
+        
+        tracker = PerformanceTracker()
+        registry = ModelRegistry()
+        
+        # Get all models and their performance
+        models = registry.list_models()
+        results = []
+        
+        for model in models:
+            model_id = model["id"]
+            perf_data = tracker.get_performance(model_id, symbol, interval)
+            
+            results.append({
+                "model": model,
+                "performance": perf_data
+            })
+        
+        return jsonify({"ok": True, "performance": results})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/predictions")
+def api_predictions():
+    """Get recent predictions with optional filters."""
+    try:
+        model_id = request.args.get("model_id", type=int)
+        symbol = request.args.get("symbol")
+        limit = request.args.get("limit", 50, type=int)
+        
+        logger = PredictionLogger()
+        
+        if model_id:
+            predictions = logger.get_predictions_by_model(model_id, symbol, limit)
+        else:
+            # Get all recent predictions
+            with logger.get_connection(logger.db_path) as conn:
+                cursor = conn.cursor()
+                query = "SELECT * FROM predictions ORDER BY timestamp DESC LIMIT ?"
+                cursor.execute(query, (limit,))
+                rows = cursor.fetchall()
+                predictions = [dict(row) for row in rows]
+        
+        return jsonify({"ok": True, "predictions": predictions})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 def run_web(host: str = "127.0.0.1", port: int = 5000):
