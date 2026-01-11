@@ -136,6 +136,17 @@
     <div id="prediction-output"></div>
   </div>
 
+  <!-- Model Management -->
+  <div class="card">
+    <h2>⚙️ Model Management</h2>
+    <p style="color: #6b7280; margin: 0 0 16px 0;">Initialize baseline models or train on historical data</p>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <button class="btn btn-primary" onclick="initializeBaselines()">Initialize Baseline Models</button>
+      <button class="btn btn-secondary" onclick="trainModels()">Train on Historical Data</button>
+    </div>
+    <div id="training-output" style="margin-top: 16px;"></div>
+  </div>
+
   <!-- Models List -->
   <div class="card">
     <h2>Registered Models</h2>
@@ -398,6 +409,67 @@ loadData();
 
 // Auto-refresh every 30 seconds
 setInterval(loadData, 30000);
+
+async function initializeBaselines() {
+  const output = document.getElementById('training-output');
+  output.innerHTML = '<div class="prediction-result loading">Initializing baseline models...</div>';
+  
+  try {
+    const res = await fetch('/api/train/initialize', { method: 'POST' });
+    const data = await res.json();
+    
+    if (!data.ok) {
+      output.innerHTML = `<div class="prediction-result error">Error: ${data.error}</div>`;
+      return;
+    }
+    
+    const models = data.models || [];
+    const html = `
+      <div class="prediction-result">
+        <h4 style="margin-top: 0;">✓ Initialized ${models.length} baseline models</h4>
+        <ul style="margin: 12px 0;">
+          ${models.map(m => `<li><strong>${m.name}</strong> (${m.type}) v${m.version}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+    output.innerHTML = html;
+    
+    // Refresh models list
+    await loadData();
+  } catch (e) {
+    output.innerHTML = `<div class="prediction-result error">Error: ${e.message}</div>`;
+  }
+}
+
+async function trainModels() {
+  const output = document.getElementById('training-output');
+  output.innerHTML = '<div class="prediction-result loading">Training models on historical data... This may take a moment.</div>';
+  
+  try {
+    const res = await fetch('/api/train/models', { method: 'POST' });
+    const data = await res.json();
+    
+    if (!data.ok) {
+      output.innerHTML = `<div class="prediction-result error">Error: ${data.error}</div>`;
+      return;
+    }
+    
+    const html = `
+      <div class="prediction-result">
+        <h4 style="margin-top: 0;">✓ Training Complete</h4>
+        <p><strong>Generated Predictions:</strong> ${data.predictions_generated}</p>
+        <p><strong>Market Conditions:</strong> ${data.conditions?.join(', ') || 'N/A'}</p>
+        <p>Models have learned from ${data.candles_analyzed || 0} candles of market data.</p>
+      </div>
+    `;
+    output.innerHTML = html;
+    
+    // Refresh all data
+    await loadData();
+  } catch (e) {
+    output.innerHTML = `<div class="prediction-result error">Error: ${e.message}</div>`;
+  }
+}
 </script>
 </body>
 </html>
