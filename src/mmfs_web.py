@@ -137,6 +137,12 @@ def index():
     return render_template("index.html", symbol=state.symbol, interval=state.interval)
 
 
+@app.route("/ml")
+def ml_dashboard():
+    """ML dashboard for model management and predictions."""
+    return render_template("ml_dashboard.html")
+
+
 @app.route("/start", methods=["POST"])
 def start():
     data = request.get_json(silent=True) or {}
