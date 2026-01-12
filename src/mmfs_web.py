@@ -344,18 +344,21 @@ def api_train_models():
         from .performance_tracker import PerformanceTracker, detect_market_condition
         import random
         
-        logger = PredictionLogger()
-        tracker = PerformanceTracker()
-        registry = ModelRegistry()
-        
-        # Get current candle data
+        # Get current candle data first
         with state.lock:
-            if state.df.empty:
-                return jsonify({"ok": False, "error": "No candle data available"}), 400
+            if state.df.empty or len(state.df) < 20:
+                return jsonify({
+                    "ok": False, 
+                    "error": "Not enough historical data available. Please wait for more candles to be collected (need at least 20 candles)."
+                }), 400
             
             candles_array = state.df[["Open", "High", "Low", "Close", "Volume"]].values
             symbol = state.symbol
             interval = state.interval
+        
+        logger = PredictionLogger()
+        tracker = PerformanceTracker()
+        registry = ModelRegistry()
         
         # Get all registered models
         models = registry.list_models()
@@ -371,7 +374,13 @@ def api_train_models():
         # Generate predictions for each model
         for model_meta in models:
             model_id = model_meta['id']
-            model_obj, _ = registry.load_model(model_id)
+            try:
+                model_obj, _ = registry.load_model(model_id)
+            except Exception as e:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Failed to load model {model_meta['name']}: {str(e)}"
+                }), 500
             
             # Make multiple predictions with slight data variations
             for i in range(1, min(len(candles_array), 25)):
@@ -415,7 +424,7 @@ def api_train_models():
             "interval": interval
         })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": f"Training error: {str(e)}"}), 500
 
 
 def run_web(host: str = "127.0.0.1", port: int = 5000):
