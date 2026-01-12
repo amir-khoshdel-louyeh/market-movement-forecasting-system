@@ -4,3 +4,4 @@ __pycache__/
 /docs
 /data/*.db
 /data/*.db-journal
+/data/models/*.pkl
