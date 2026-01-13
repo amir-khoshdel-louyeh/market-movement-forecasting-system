@@ -215,6 +215,22 @@ async function loadModels() {
     const res = await fetch('/api/models');
     const data = await res.json();
     
+    // Disable/enable Initialize Baseline Models button based on model count
+    const initBtn = document.querySelector('button[onclick="initializeBaselines()"]');
+    if (initBtn) {
+      if (data.ok && data.models && data.models.length > 0) {
+        initBtn.disabled = true;
+        initBtn.title = 'Delete existing models first';
+        initBtn.style.opacity = '0.5';
+        initBtn.style.cursor = 'not-allowed';
+      } else {
+        initBtn.disabled = false;
+        initBtn.title = '';
+        initBtn.style.opacity = '1';
+        initBtn.style.cursor = 'pointer';
+      }
+    }
+    
     if (!data.ok || !data.models || data.models.length === 0) {
       document.getElementById('models-list').innerHTML = '<p>No models registered yet.</p>';
       return;

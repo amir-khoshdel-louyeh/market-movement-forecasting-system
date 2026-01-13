@@ -306,6 +306,15 @@ def api_train_initialize():
         )
         
         registry = ModelRegistry()
+        
+        # Check if models already exist
+        existing_models = registry.list_models()
+        if existing_models:
+            return jsonify({
+                "ok": False,
+                "error": f"Cannot initialize baselines. {len(existing_models)} model(s) already registered. Delete existing models first."
+            }), 400
+        
         models_info = []
         
         # Initialize baseline models
