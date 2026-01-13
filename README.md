@@ -15,8 +15,8 @@ pip3 install -r ./requirements.txt
 2. Stream a ticker:
 
 ```bash
-# Option A: via main.py (no install needed)
-python3 main.py btcusdt
+# Option A: via main.py
+python3 main.py
 
 # Web UI: start Flask front-end
 python3 main.py --mode web
