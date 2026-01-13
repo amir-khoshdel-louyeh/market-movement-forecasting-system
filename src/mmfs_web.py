@@ -16,6 +16,7 @@ from .model_registry import ModelRegistry
 from .prediction_logger import PredictionLogger
 from .performance_tracker import PerformanceTracker
 from .aggregate_selector import AggregateModelSelector
+from .database import init_db
 
 
 class WebState:
@@ -440,6 +441,9 @@ def api_train_models():
 
 
 def run_web(host: str = "127.0.0.1", port: int = 5000):
+    # Initialize database
+    init_db()
+    
     # Seed last 50 candles for default symbol/interval, then start stream
     _seed_history(state.symbol, state.interval, limit=50)
     _start_stream(state.symbol, state.interval)
