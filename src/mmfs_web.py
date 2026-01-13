@@ -213,12 +213,13 @@ def api_models():
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    """Make a prediction using the best model for current conditions."""
+    """Make a prediction using the best model for current conditions or a specific model."""
     try:
         data = request.get_json() or {}
         symbol = data.get("symbol", state.symbol).lower()
         interval = data.get("interval", state.interval)
         use_ensemble = data.get("ensemble", False)
+        model_id = data.get("model_id")
         
         # Get recent candle data
         with state.lock:
@@ -232,6 +233,8 @@ def api_predict():
         
         if use_ensemble:
             result = selector.get_ensemble_prediction(symbol, interval, candles_array)
+        elif model_id:
+            result = selector.predict_with_model(model_id, symbol, interval, candles_array, log_prediction=True)
         else:
             result = selector.predict(symbol, interval, candles_array, log_prediction=True)
         

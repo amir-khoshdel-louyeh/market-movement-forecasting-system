@@ -126,10 +126,13 @@
   <!-- Make Prediction -->
   <div class="card">
     <h2>Make Prediction</h2>
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <label>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+      <label style="display: flex; align-items: center; gap: 6px;">
         <input type="checkbox" id="use-ensemble"> Use Ensemble (Top 3 Models)
       </label>
+      <select id="model-selector" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #d1d5db; font-size: 0.95rem;">
+        <option value="">-- Select Model --</option>
+      </select>
       <button class="btn btn-primary" onclick="makePrediction()">Predict Now</button>
       <button class="btn btn-secondary" onclick="loadData()">Refresh Data</button>
     </div>
@@ -228,6 +231,28 @@ async function loadModels() {
         initBtn.title = '';
         initBtn.style.opacity = '1';
         initBtn.style.cursor = 'pointer';
+      }
+    }
+    
+    // Populate model selector dropdown
+    const selector = document.getElementById('model-selector');
+    if (selector) {
+      if (data.ok && data.models && data.models.length > 0) {
+        // Keep the default option
+        const defaultOption = selector.querySelector('option[value=""]');
+        selector.innerHTML = defaultOption ? defaultOption.outerHTML : '<option value="">-- Select Model --</option>';
+        
+        // Add all available models
+        data.models.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model.id;
+          option.textContent = `${model.name} (${model.type}) v${model.version}`;
+          selector.appendChild(option);
+        });
+        selector.disabled = false;
+      } else {
+        selector.innerHTML = '<option value="">-- No models available --</option>';
+        selector.disabled = true;
       }
     }
     
@@ -368,14 +393,26 @@ async function loadPredictions() {
 async function makePrediction() {
   const output = document.getElementById('prediction-output');
   const useEnsemble = document.getElementById('use-ensemble').checked;
+  const selectedModelId = document.getElementById('model-selector').value;
+  
+  // Validate input
+  if (!useEnsemble && !selectedModelId) {
+    output.innerHTML = '<div class="prediction-result error">Please select a model or enable ensemble mode.</div>';
+    return;
+  }
   
   output.innerHTML = '<div class="prediction-result loading">Making prediction...</div>';
   
   try {
+    const body = { ensemble: useEnsemble };
+    if (selectedModelId) {
+      body.model_id = parseInt(selectedModelId);
+    }
+    
     const res = await fetch('/api/predict', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ensemble: useEnsemble })
+      body: JSON.stringify(body)
     });
     
     const data = await res.json();

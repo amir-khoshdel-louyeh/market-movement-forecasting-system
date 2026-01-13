@@ -143,7 +143,62 @@ class AggregateModelSelector:
             "features": features
         }
     
-    def get_ensemble_prediction(
+    def predict_with_model(
+        self,
+        model_id: int,
+        symbol: str,
+        interval: str,
+        candles: np.ndarray,
+        log_prediction: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Make a prediction using a specific model.
+        
+        Args:
+            model_id: The specific model ID to use
+            symbol: Trading pair
+            interval: Timeframe
+            candles: Recent candle data
+            log_prediction: Whether to log the prediction to database
+        
+        Returns:
+            Dict with prediction details
+        """
+        # Detect current market condition
+        market_condition = detect_market_condition(candles)
+        
+        # Load the specified model
+        model_obj, model_metadata = self.registry.load_model(model_id)
+        
+        # Prepare features
+        features = model_obj.prepare_features(candles)
+        
+        # Make prediction
+        prediction, confidence = model_obj.predict(features)
+        
+        # Log prediction if requested
+        prediction_id = None
+        if log_prediction:
+            prediction_id = self.logger.log_prediction(
+                model_id=model_id,
+                symbol=symbol,
+                interval=interval,
+                prediction=prediction,
+                confidence=confidence,
+                features=features
+            )
+        
+        return {
+            "prediction": prediction,
+            "confidence": confidence,
+            "model_id": model_id,
+            "model_name": model_metadata['name'],
+            "model_type": model_metadata['type'],
+            "market_condition": market_condition,
+            "prediction_id": prediction_id,
+            "features": features
+        }
+        def get_ensemble_prediction(
         self,
         symbol: str,
         interval: str,
