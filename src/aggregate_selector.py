@@ -198,7 +198,8 @@ class AggregateModelSelector:
             "prediction_id": prediction_id,
             "features": features
         }
-        def get_ensemble_prediction(
+    
+    def get_ensemble_prediction(
         self,
         symbol: str,
         interval: str,
