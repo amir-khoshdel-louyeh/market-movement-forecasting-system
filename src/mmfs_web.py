@@ -3,8 +3,9 @@ import threading
 import asyncio
 import queue
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -131,6 +132,126 @@ def _seed_history(symbol: str, interval: str, limit: int = 50):
             state.df = df.tail(state.max_rows)
     except Exception as e:
         print(f"Seed history failed: {e}")
+
+
+def _get_historical_data_cache_path(symbol: str, interval: str, days: int = 30) -> Path:
+    """Get the cache file path for historical data."""
+    data_dir = Path(__file__).parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"historical_{symbol.lower()}_{interval}_{days}d.csv"
+    return data_dir / filename
+
+
+def _download_historical_data(symbol: str, interval: str, days: int = 30) -> pd.DataFrame:
+    """
+    Download historical kline data from Binance.
+    
+    Args:
+        symbol: Trading pair (e.g., "BTCUSDT")
+        interval: Kline interval (e.g., "1m", "5m", "1h")
+        days: Number of days to download
+        
+    Returns:
+        DataFrame with OHLCV data
+    """
+    url = "https://api.binance.com/api/v3/klines"
+    all_data = []
+    
+    # Calculate number of candles needed (depends on interval)
+    interval_minutes = {
+        "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+        "1h": 60, "4h": 240, "1d": 1440
+    }
+    minutes_per_interval = interval_minutes.get(interval, 60)
+    total_candles_needed = (days * 24 * 60) // minutes_per_interval
+    
+    # Binance API limit is 1000 candles per request
+    max_per_request = 1000
+    current_end_time = None
+    
+    remaining_candles = total_candles_needed
+    
+    while remaining_candles > 0:
+        limit = min(max_per_request, remaining_candles)
+        params = {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": limit
+        }
+        
+        if current_end_time:
+            params["endTime"] = int(current_end_time)
+        
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            
+            if not data:
+                break
+            
+            all_data = data + all_data  # Prepend to maintain chronological order
+            
+            # Set end time for next request (go back further)
+            first_candle_time = data[0][0]
+            current_end_time = first_candle_time - 1
+            
+            remaining_candles -= len(data)
+            
+            # Be respectful to the API
+            time.sleep(0.2)
+            
+        except Exception as e:
+            print(f"Error downloading historical data: {e}")
+            break
+    
+    # Convert to DataFrame
+    rows = []
+    for k in all_data:
+        ot, o, h, l, c, v = k[0], k[1], k[2], k[3], k[4], k[5]
+        dt = pd.to_datetime(ot, unit='ms', utc=True)
+        rows.append((dt, float(o), float(h), float(l), float(c), float(v)))
+    
+    df = pd.DataFrame(rows, columns=["Date", "Open", "High", "Low", "Close", "Volume"]).set_index("Date")
+    return df
+
+
+def _get_historical_data(symbol: str, interval: str, days: int = 30, use_cache: bool = True) -> pd.DataFrame:
+    """
+    Get historical data, using cached version if available.
+    
+    Args:
+        symbol: Trading pair
+        interval: Kline interval
+        days: Number of days to fetch
+        use_cache: Whether to use cached data if available
+        
+    Returns:
+        DataFrame with historical OHLCV data
+    """
+    cache_path = _get_historical_data_cache_path(symbol, interval, days)
+    
+    # Check cache
+    if use_cache and cache_path.exists():
+        try:
+            print(f"Loading cached historical data from {cache_path}")
+            df = pd.read_csv(cache_path, index_col="Date", parse_dates=True)
+            return df
+        except Exception as e:
+            print(f"Failed to load cache: {e}")
+    
+    # Download fresh data
+    print(f"Downloading {days} days of {interval} data for {symbol}...")
+    df = _download_historical_data(symbol, interval, days)
+    
+    # Save to cache
+    try:
+        df.to_csv(cache_path)
+        print(f"Cached historical data to {cache_path}")
+    except Exception as e:
+        print(f"Failed to cache data: {e}")
+    
+    return df
 
 
 @app.route("/")
@@ -351,23 +472,16 @@ def api_train_initialize():
 
 @app.route("/api/train/models", methods=["POST"])
 def api_train_models():
-    """Train models on historical candle data and update performance metrics."""
+    """Train models on one month of historical candle data and update performance metrics."""
     try:
         from .prediction_logger import PredictionLogger
         from .performance_tracker import PerformanceTracker, detect_market_condition
         import random
         
-        # Get current candle data first
-        with state.lock:
-            if state.df.empty or len(state.df) < 20:
-                return jsonify({
-                    "ok": False, 
-                    "error": "Not enough historical data available. Please wait for more candles to be collected (need at least 20 candles)."
-                }), 400
-            
-            candles_array = state.df[["Open", "High", "Low", "Close", "Volume"]].values
-            symbol = state.symbol
-            interval = state.interval
+        # Get symbol and interval
+        data = request.get_json() or {}
+        symbol = data.get("symbol", state.symbol).lower()
+        interval = data.get("interval", state.interval)
         
         logger = PredictionLogger()
         tracker = PerformanceTracker()
@@ -378,13 +492,24 @@ def api_train_models():
         if not models:
             return jsonify({"ok": False, "error": "No models registered. Initialize baselines first."}), 400
         
-        # Detect market condition
-        market_condition = detect_market_condition(candles_array)
+        # Download historical data (30 days, cached)
+        print(f"Fetching one month of historical data for {symbol}...")
+        hist_df = _get_historical_data(symbol, interval, days=30, use_cache=True)
+        
+        if hist_df.empty or len(hist_df) < 50:
+            return jsonify({
+                "ok": False,
+                "error": f"Insufficient historical data. Got {len(hist_df)} candles, need at least 50."
+            }), 400
+        
+        candles_array = hist_df[["Open", "High", "Low", "Close", "Volume"]].values
         
         predictions_generated = 0
         conditions_seen = set()
         
-        # Generate predictions for each model
+        print(f"Training on {len(candles_array)} candles from {hist_df.index[0]} to {hist_df.index[-1]}")
+        
+        # Generate predictions for each model using historical data
         for model_meta in models:
             model_id = model_meta['id']
             try:
@@ -395,9 +520,16 @@ def api_train_models():
                     "error": f"Failed to load model {model_meta['name']}: {str(e)}"
                 }), 500
             
-            # Make multiple predictions with slight data variations
-            for i in range(1, min(len(candles_array), 25)):
-                subset = candles_array[max(0, len(candles_array) - 30 - i):]
+            # Make predictions on different windows of historical data
+            # Use sliding windows to generate more varied training data
+            window_size = 30
+            step = 5  # Step through data with stride
+            
+            for start_idx in range(0, len(candles_array) - window_size, step):
+                subset = candles_array[start_idx : start_idx + window_size]
+                
+                # Detect market condition for this window
+                market_condition = detect_market_condition(subset)
                 
                 features = model_obj.prepare_features(subset)
                 prediction, confidence = model_obj.predict(features)
@@ -412,8 +544,20 @@ def api_train_models():
                     features=features
                 )
                 
-                # Simulate actual result (for training purposes)
-                actual = random.choice(["up", "down", "neutral"])
+                # Simulate actual result based on next candle (for training purposes)
+                if start_idx + window_size < len(candles_array):
+                    next_close = candles_array[start_idx + window_size][3]  # Close price
+                    current_close = candles_array[start_idx + window_size - 1][3]
+                    
+                    if next_close > current_close:
+                        actual = "up"
+                    elif next_close < current_close:
+                        actual = "down"
+                    else:
+                        actual = "neutral"
+                else:
+                    actual = random.choice(["up", "down", "neutral"])
+                
                 logger.update_actual_result(pred_id, actual)
                 
                 predictions_generated += 1
@@ -425,7 +569,7 @@ def api_train_models():
                 model_meta['id'],
                 symbol,
                 interval,
-                market_condition
+                "mixed"  # Models trained on mixed market conditions
             )
         
         return jsonify({
@@ -434,9 +578,15 @@ def api_train_models():
             "conditions": list(conditions_seen),
             "candles_analyzed": len(candles_array),
             "symbol": symbol,
-            "interval": interval
+            "interval": interval,
+            "data_range": {
+                "start": hist_df.index[0].isoformat(),
+                "end": hist_df.index[-1].isoformat()
+            }
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"ok": False, "error": f"Training error: {str(e)}"}), 500
 
 
