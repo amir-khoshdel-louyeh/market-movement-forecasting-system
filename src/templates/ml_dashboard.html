@@ -496,7 +496,7 @@ async function initializeBaselines() {
 
 async function trainModels() {
   const output = document.getElementById('training-output');
-  output.innerHTML = '<div class="prediction-result loading">Training models on historical data... This may take a moment.</div>';
+  output.innerHTML = '<div class="prediction-result loading">Downloading one month of historical data and training models... This may take a moment.</div>';
   
   try {
     const res = await fetch('/api/train/models', { method: 'POST' });
@@ -507,12 +507,18 @@ async function trainModels() {
       return;
     }
     
+    const dataRange = data.data_range;
+    const startDate = dataRange ? new Date(dataRange.start).toLocaleDateString() : 'N/A';
+    const endDate = dataRange ? new Date(dataRange.end).toLocaleDateString() : 'N/A';
+    
     const html = `
       <div class="prediction-result">
         <h4 style="margin-top: 0;">✓ Training Complete</h4>
-        <p><strong>Generated Predictions:</strong> ${data.predictions_generated}</p>
+        <p><strong>Data Period:</strong> ${startDate} to ${endDate}</p>
+        <p><strong>Candles Analyzed:</strong> ${data.candles_analyzed || 0}</p>
+        <p><strong>Predictions Generated:</strong> ${data.predictions_generated}</p>
         <p><strong>Market Conditions:</strong> ${data.conditions?.join(', ') || 'N/A'}</p>
-        <p>Models have learned from ${data.candles_analyzed || 0} candles of market data.</p>
+        <p style="color: #10b981; font-weight: bold;">Models have learned from ${data.candles_analyzed || 0} candles of historical market data!</p>
       </div>
     `;
     output.innerHTML = html;
