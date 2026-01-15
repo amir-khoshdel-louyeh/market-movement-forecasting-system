@@ -56,9 +56,8 @@
       xaxis: 'x2', yaxis: 'y2', name: 'Volume'
     };
     const plotLayout = layout();
-    plotLayout.width = 1600;
-    plotLayout.height = 800;
-    Plotly.newPlot(chartEl, [candles, volume], plotLayout, { responsive: false, displayModeBar: false });
+    plotLayout.autosize = true;
+    Plotly.newPlot(chartEl, [candles, volume], plotLayout, { responsive: true, displayModeBar: false });
      applyDragMode('zoom');
   }
 

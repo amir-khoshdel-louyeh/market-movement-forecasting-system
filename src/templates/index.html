@@ -7,11 +7,12 @@
   <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f5f7fa; }
-    header { padding: 16px 24px; border-bottom: 1px solid #eee; background: #fff; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .layout { display: flex; gap: 0; }
-    #sidebar { width: 140px; border-right: 1px solid #eee; background: #f7f8fb; padding: 16px 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex-shrink: 0; }
-    #chart { flex: 1; min-width: 0; background: #fff; padding: 16px; overflow: auto; }
+    html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; display: flex; flex-direction: column; background: #f5f7fa; }
+    header { padding: 12px 16px; border-bottom: 1px solid #eee; background: #fff; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+    .layout { display: flex; flex: 1; min-height: 0; }
+    #sidebar { width: 140px; border-right: 1px solid #eee; background: #f7f8fb; padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex-shrink: 0; }
+    #chart { flex: 1; min-width: 0; background: #fff; overflow: auto; }
     input, select, button { padding: 6px 8px; border: 1px solid #d5d7df; border-radius: 4px; }
     label { font-size: 0.9rem; }
     .tool-btn { width: 100%; text-align: left; border: 1px solid #d5d7df; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; padding: 8px 10px; transition: all 0.2s; }
