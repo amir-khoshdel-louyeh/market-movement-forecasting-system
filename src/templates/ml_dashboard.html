@@ -95,6 +95,13 @@
     }
     .loading { color: #6b7280; font-style: italic; }
     .error { color: #dc2626; }
+    
+    /* Skeleton Loader Styles */
+    .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
+    @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .skeleton-stat { height: 120px; border-radius: 8px; }
+    .skeleton-line { height: 20px; border-radius: 4px; margin-bottom: 12px; }
+    .skeleton-text { height: 16px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -108,7 +115,12 @@
 
 <div class="container">
   <!-- Stats Overview -->
-  <div class="stats-grid">
+  <div id="stats-skeleton" class="stats-grid">
+    <div class="skeleton skeleton-stat"></div>
+    <div class="skeleton skeleton-stat"></div>
+    <div class="skeleton skeleton-stat"></div>
+  </div>
+  <div id="stats-content" class="stats-grid" style="display: none;">
     <div class="stat-card">
       <div class="stat-label">Total Models</div>
       <div class="stat-value" id="stat-models">-</div>
@@ -171,6 +183,9 @@
 
 <script>
 async function loadData() {
+  document.getElementById('stats-skeleton').style.display = 'grid';
+  document.getElementById('stats-content').style.display = 'none';
+  
   await Promise.all([
     loadModels(),
     loadPerformance(),
@@ -208,8 +223,14 @@ async function loadStats() {
     }
     const avgAcc = count > 0 ? (totalAcc / count * 100).toFixed(1) + '%' : 'N/A';
     document.getElementById('stat-accuracy').textContent = avgAcc;
+    
+    // Hide skeleton and show content
+    document.getElementById('stats-skeleton').style.display = 'none';
+    document.getElementById('stats-content').style.display = 'grid';
   } catch (e) {
     console.error('Stats error:', e);
+    document.getElementById('stats-skeleton').style.display = 'none';
+    document.getElementById('stats-content').style.display = 'grid';
   }
 }
 
@@ -468,7 +489,11 @@ async function initializeBaselines() {
   output.innerHTML = '<div class="prediction-result loading">Initializing baseline models...</div>';
   
   try {
-    const res = await fetch('/api/train/initialize', { method: 'POST' });
+    const res = await fetch('/api/train/initialize', { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
     const data = await res.json();
     
     if (!data.ok) {
@@ -499,7 +524,11 @@ async function trainModels() {
   output.innerHTML = '<div class="prediction-result loading">Downloading one month of historical data and training models... This may take a moment.</div>';
   
   try {
-    const res = await fetch('/api/train/models', { method: 'POST' });
+    const res = await fetch('/api/train/models', { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
     const data = await res.json();
     
     if (!data.ok) {

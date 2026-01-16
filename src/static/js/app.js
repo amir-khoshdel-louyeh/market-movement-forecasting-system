@@ -43,7 +43,18 @@
     };
   }
 
+  function showSkeleton(){
+    const skeleton = document.getElementById('skeleton-container');
+    if(skeleton) skeleton.style.display = 'flex';
+  }
+
+  function hideSkeleton(){
+    const skeleton = document.getElementById('skeleton-container');
+    if(skeleton) skeleton.style.display = 'none';
+  }
+
   function render(){
+    hideSkeleton();
     const candles = {
       type: 'candlestick', x, open:o, high:h, low:l, close:c,
       increasing: { line: { color: '#16a34a' }, fillcolor: 'rgba(22,163,74,0.35)' },
@@ -75,6 +86,7 @@
   }
 
   async function loadInitial(){
+    showSkeleton();
     const res = await fetch('/api/candles');
     const js = await res.json();
     currentSymbol = (js.symbol || currentSymbol || '').toLowerCase();
