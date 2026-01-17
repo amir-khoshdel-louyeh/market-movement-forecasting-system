@@ -2,19 +2,19 @@
   // Theme management
   function initTheme(){
     const theme = localStorage.getItem('theme') || 'light';
-    if(theme === 'dark') document.documentElement.classList.add('dark-mode');
+    if(theme === 'dark') document.body.classList.add('dark-mode');
     updateThemeButton();
   }
   
   function toggleTheme(){
-    const isDark = document.documentElement.classList.toggle('dark-mode');
+    const isDark = document.body.classList.toggle('dark-mode');
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
     updateThemeButton();
   }
   
   function updateThemeButton(){
     const btn = document.getElementById('theme-toggle');
-    const isDark = document.documentElement.classList.contains('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
     if(btn) btn.textContent = isDark ? '☀️' : '🌙';
   }
   
