@@ -5,40 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MMFS – ML Dashboard</title>
   <style>
+    :root {
+      --bg-primary: #f5f7fa;
+      --bg-secondary: #fff;
+      --bg-tertiary: #f9fafb;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      --border-color: #e5e7eb;
+      --border-light: #f3f4f6;
+      --hover-bg: #f3f4f6;
+      --skeleton-light: #f0f0f0;
+      --skeleton-mid: #e0e0e0;
+    }
+    
+    body.dark-mode {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #2a2a2a;
+      --bg-tertiary: #333333;
+      --text-primary: #e0e0e0;
+      --text-secondary: #a0a0a0;
+      --text-muted: #808080;
+      --border-color: #444;
+      --border-light: #383838;
+      --hover-bg: #404040;
+      --skeleton-light: #333333;
+      --skeleton-mid: #404040;
+    }
+    
     * { box-sizing: border-box; }
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; 
       margin: 0; 
-      background: #f5f7fa;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.3s, color 0.3s;
     }
     header { 
-      background: #fff; 
+      background: var(--bg-secondary); 
       padding: 16px 24px; 
-      border-bottom: 2px solid #e5e7eb; 
+      border-bottom: 2px solid var(--border-color); 
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    h1 { margin: 0; font-size: 1.5rem; color: #1f2937; }
-    nav { margin-top: 12px; }
+    h1 { margin: 0; font-size: 1.5rem; color: var(--text-primary); }
+    nav { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
     nav a { 
       text-decoration: none; 
-      color: #6b7280; 
+      color: var(--text-secondary); 
       margin-right: 20px; 
       padding: 8px 12px;
       border-radius: 6px;
       transition: all 0.2s;
     }
-    nav a:hover { background: #f3f4f6; color: #1f2937; }
+    nav a:hover { background: var(--hover-bg); color: var(--text-primary); }
     nav a.active { background: #2563eb; color: #fff; }
+    .theme-toggle { background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 6px 8px; border-radius: 4px; transition: all 0.2s; color: var(--text-primary); margin-left: auto; }
+    .theme-toggle:hover { background: var(--hover-bg); }
     
     .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
     .card { 
-      background: #fff; 
+      background: var(--bg-secondary); 
       border-radius: 8px; 
       padding: 20px; 
       margin-bottom: 20px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    .card h2 { margin-top: 0; color: #1f2937; font-size: 1.25rem; }
+    .card h2 { margin-top: 0; color: var(--text-primary); font-size: 1.25rem; }
     
     .stats-grid { 
       display: grid; 
@@ -57,9 +89,9 @@
     .stat-value { font-size: 2rem; font-weight: bold; }
     
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-    th { background: #f9fafb; font-weight: 600; color: #374151; }
-    tr:hover { background: #f9fafb; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+    th { background: var(--bg-tertiary); font-weight: 600; color: var(--text-primary); }
+    tr:hover { background: var(--hover-bg); }
     
     .badge { 
       display: inline-block; 
@@ -71,6 +103,15 @@
     .badge-success { background: #d1fae5; color: #065f46; }
     .badge-warning { background: #fef3c7; color: #92400e; }
     .badge-info { background: #dbeafe; color: #1e40af; }
+    
+    input[type="checkbox"],
+    select { 
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 6px 8px;
+    }
     
     .btn { 
       padding: 8px 16px; 
@@ -92,12 +133,16 @@
       background: #f0fdf4;
       border: 1px solid #86efac;
       border-radius: 6px;
+      color: var(--text-primary);
     }
-    .loading { color: #6b7280; font-style: italic; }
+    body.dark-mode .prediction-result {
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .loading { color: var(--text-muted); font-style: italic; }
     .error { color: #dc2626; }
     
     /* Skeleton Loader Styles */
-    .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
+    .skeleton { background: linear-gradient(90deg, var(--skeleton-light) 25%, var(--skeleton-mid) 50%, var(--skeleton-light) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
     @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .skeleton-stat { height: 120px; border-radius: 8px; }
     .skeleton-line { height: 20px; border-radius: 4px; margin-bottom: 12px; }
@@ -110,6 +155,7 @@
   <nav>
     <a href="/">Charts</a>
     <a href="/ml" class="active">ML Dashboard</a>
+    <button id="theme-toggle" class="theme-toggle" title="Toggle dark mode">🌙</button>
   </nav>
 </header>
 
@@ -182,6 +228,30 @@
 </div>
 
 <script>
+// Theme Management
+function initTheme(){
+  const theme = localStorage.getItem('theme') || 'light';
+  if(theme === 'dark') document.documentElement.classList.add('dark-mode');
+  updateThemeButton();
+}
+
+function toggleTheme(){
+  const isDark = document.documentElement.classList.toggle('dark-mode');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  updateThemeButton();
+}
+
+function updateThemeButton(){
+  const btn = document.getElementById('theme-toggle');
+  const isDark = document.documentElement.classList.contains('dark-mode');
+  if(btn) btn.textContent = isDark ? '☀️' : '🌙';
+}
+
+// Initialize theme on load
+initTheme();
+const themeBtn = document.getElementById('theme-toggle');
+if(themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
 async function loadData() {
   document.getElementById('stats-skeleton').style.display = 'grid';
   document.getElementById('stats-content').style.display = 'none';
