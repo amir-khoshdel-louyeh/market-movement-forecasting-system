@@ -1,4 +1,23 @@
 (function(){
+  // Theme management
+  function initTheme(){
+    const theme = localStorage.getItem('theme') || 'light';
+    if(theme === 'dark') document.documentElement.classList.add('dark-mode');
+    updateThemeButton();
+  }
+  
+  function toggleTheme(){
+    const isDark = document.documentElement.classList.toggle('dark-mode');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    updateThemeButton();
+  }
+  
+  function updateThemeButton(){
+    const btn = document.getElementById('theme-toggle');
+    const isDark = document.documentElement.classList.contains('dark-mode');
+    if(btn) btn.textContent = isDark ? '☀️' : '🌙';
+  }
+  
   const chartEl = document.getElementById('chart');
   const statusEl = document.getElementById('status');
   const symbolEl = document.getElementById('symbol');
@@ -10,6 +29,7 @@
    const btnSelect = document.getElementById('btn-select');
    const btnLasso = document.getElementById('btn-lasso');
    const btnReset = document.getElementById('btn-reset');
+   const themeToggle = document.getElementById('theme-toggle');
 
   let currentSymbol = (symbolEl.value || '').trim().toLowerCase();
   let currentInterval = intervalEl.value;
@@ -154,6 +174,7 @@
 
   symbolEl.addEventListener('change', applySelection);
   intervalEl.addEventListener('change', applySelection);
+  if(themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
    function normalizeRangeValue(v){
      if(v instanceof Date){ return v.getTime(); }
@@ -227,6 +248,7 @@
    btnSelect?.addEventListener('click', () => applyDragMode('select'));
    btnLasso?.addEventListener('click', () => applyDragMode('lasso'));
 
-  // Initial load and start stream on page open
+  // Initialize theme and start app
+  initTheme();
   loadInitial().then(startStream);
 })();
