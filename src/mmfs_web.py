@@ -421,7 +421,7 @@ def api_predictions():
 
 @app.route("/api/train/initialize", methods=["POST"])
 def api_train_initialize():
-    """Initialize and register baseline models."""
+    """Initialize and register baseline + deep models."""
     try:
         from .models.baseline import (
             MovingAverageCrossoverModel,
@@ -429,6 +429,8 @@ def api_train_initialize():
             VolumeWeightedModel,
             RandomModel
         )
+        from .models.lstm import LSTMModel
+        from .models.transformer import TransformerModel
         
         registry = ModelRegistry()
         
@@ -442,12 +444,14 @@ def api_train_initialize():
         
         models_info = []
         
-        # Initialize baseline models
+        # Initialize baseline + deep models
         baselines = [
             MovingAverageCrossoverModel(),
             MomentumModel(),
             VolumeWeightedModel(),
-            RandomModel()
+            RandomModel(),
+            LSTMModel(),
+            TransformerModel(),
         ]
         
         for model in baselines:
@@ -509,6 +513,24 @@ def api_train_models():
         
         print(f"Training on {len(candles_array)} candles from {hist_df.index[0]} to {hist_df.index[-1]}")
         
+        # Fit deep models on full history before evaluation
+        fit_results = {}
+        for model_meta in models:
+            if model_meta['type'] in ("lstm", "transformer"):
+                try:
+                    model_obj, meta = registry.load_model(model_meta['id'])
+                    if hasattr(model_obj, "fit"):
+                        res = model_obj.fit(candles_array, epochs=10)
+                        fit_results[model_meta['name']] = res
+                        # persist trained weights back to same file
+                        import pickle
+                        from pathlib import Path
+                        p = Path(meta["file_path"])
+                        with open(p, "wb") as f:
+                            pickle.dump(model_obj, f)
+                except Exception as fe:
+                    fit_results[model_meta['name']] = {"ok": False, "error": str(fe)}
+
         # Generate predictions for each model using historical data
         for model_meta in models:
             model_id = model_meta['id']
@@ -579,6 +601,7 @@ def api_train_models():
             "candles_analyzed": len(candles_array),
             "symbol": symbol,
             "interval": interval,
+            "fit_results": fit_results,
             "data_range": {
                 "start": hist_df.index[0].isoformat(),
                 "end": hist_df.index[-1].isoformat()
