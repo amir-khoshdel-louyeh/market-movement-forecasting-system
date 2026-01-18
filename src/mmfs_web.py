@@ -18,6 +18,7 @@ from .prediction_logger import PredictionLogger
 from .performance_tracker import PerformanceTracker
 from .aggregate_selector import AggregateModelSelector
 from .database import init_db
+from .auth import require_auth
 
 
 class WebState:
@@ -302,6 +303,7 @@ def ml_dashboard():
 
 
 @app.route("/start", methods=["POST"])
+@require_auth
 def start():
     data = request.get_json(silent=True) or {}
     symbol = (data.get("symbol") or state.symbol).lower()
@@ -370,6 +372,7 @@ def api_models():
 
 
 @app.route("/api/predict", methods=["POST"])
+@require_auth
 def api_predict():
     """Make a prediction using the best model for current conditions or a specific model."""
     try:
@@ -456,6 +459,7 @@ def api_predictions():
 
 
 @app.route("/api/train/initialize", methods=["POST"])
+@require_auth
 def api_train_initialize():
     """Initialize and register baseline + deep models."""
     try:
@@ -511,6 +515,7 @@ def api_train_initialize():
 
 
 @app.route("/api/train/models", methods=["POST"])
+@require_auth
 def api_train_models():
     """Train models on one month of historical candle data with proper backtest split."""
     try:
@@ -587,6 +592,7 @@ def api_train_models():
 
 
 @app.route("/api/backtest", methods=["POST"])
+@require_auth
 def api_backtest():
     """Dry-run backtest without DB writes; shows train/test metrics per model."""
     try:
@@ -618,6 +624,7 @@ def api_backtest():
 
 
 @app.route("/api/resolve", methods=["POST"])
+@require_auth
 def api_resolve():
     """Manually resolve pending predictions using latest closed candle."""
     try:
