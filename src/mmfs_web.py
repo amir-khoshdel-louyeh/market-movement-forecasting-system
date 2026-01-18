@@ -93,7 +93,7 @@ def _start_stream(symbol: str, interval: str):
             from .performance_tracker import PerformanceTracker
             actual = label_next(prev_close, curr_close)
             logger = PredictionLogger()
-            pending = logger.get_pending_predictions(symbol=symbol, interval=interval) if False else logger.get_pending_predictions(symbol=symbol)
+            pending = logger.get_pending_predictions(symbol=symbol)
             # filter by interval manually (get_pending has no interval filter)
             pending = [p for p in pending if p["interval"] == interval and p["symbol"] == symbol.lower()]
             if not pending:
