@@ -26,5 +26,12 @@ mmfs-stream = "src.mmfs_stream:main"
 [tool.setuptools.packages.find]
 where = ["."]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+
 [tool.ruff]
 line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
