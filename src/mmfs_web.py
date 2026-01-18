@@ -586,6 +586,70 @@ def api_train_models():
         return jsonify({"ok": False, "error": f"Training error: {str(e)}"}), 500
 
 
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    """Dry-run backtest without DB writes; shows train/test metrics per model."""
+    try:
+        from .backtest import run_backtest
+        data = request.get_json() or {}
+        symbol = data.get("symbol", state.symbol).lower()
+        interval = data.get("interval", state.interval)
+        days = int(data.get("days", 30))
+        threshold = float(data.get("threshold", 0.2))
+        train_ratio = float(data.get("train_ratio", 0.8))
+        # use same cache helper but allow days override
+        hist_df = _get_historical_data(symbol, interval, days=days, use_cache=True)
+        if hist_df.empty or len(hist_df) < 50:
+            return jsonify({"ok": False, "error": f"Insufficient data: {len(hist_df)}"}), 400
+        candles = hist_df[["Open", "High", "Low", "Close", "Volume"]].values
+        bt = run_backtest(
+            candles=candles,
+            symbol=symbol,
+            interval=interval,
+            threshold=threshold,
+            train_ratio=train_ratio,
+            log_to_db=False,
+        )
+        return jsonify({"ok": True, "symbol": symbol, "interval": interval, "days": days, **bt})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/resolve", methods=["POST"])
+def api_resolve():
+    """Manually resolve pending predictions using latest closed candle."""
+    try:
+        from .backtest import label_next
+        data = request.get_json() or {}
+        symbol = (data.get("symbol") or state.symbol).lower()
+        interval = data.get("interval") or state.interval
+        threshold = float(data.get("threshold", 0.2))
+        # need at least 2 closes to determine direction
+        with state.lock:
+            if len(state.df) < 2:
+                return jsonify({"ok": False, "error": "not enough candles"}), 400
+            prev_close = float(state.df.iloc[-2]["Close"])
+            curr_close = float(state.df.iloc[-1]["Close"])
+        actual = label_next(prev_close, curr_close, threshold=threshold)
+        logger = PredictionLogger()
+        pending = logger.get_pending_predictions(symbol=symbol)
+        pending = [p for p in pending if p["interval"] == interval and p["symbol"] == symbol.lower()]
+        if not pending:
+            return jsonify({"ok": True, "resolved": 0, "actual": actual, "prev_close": prev_close, "curr_close": curr_close})
+        for p in pending:
+            logger.update_actual_result(p["id"], actual)
+        # refresh performance
+        from .performance_tracker import PerformanceTracker
+        tracker = PerformanceTracker()
+        for mid in set(pp["model_id"] for pp in pending):
+            tracker.update_performance(mid, symbol, interval, "mixed")
+        return jsonify({"ok": True, "resolved": len(pending), "actual": actual, "prev_close": prev_close, "curr_close": curr_close})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 def run_web(host: str = "127.0.0.1", port: int = 5000):
     # Initialize database
     init_db()
