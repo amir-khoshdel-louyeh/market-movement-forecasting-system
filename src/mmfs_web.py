@@ -512,11 +512,9 @@ def api_train_initialize():
 
 @app.route("/api/train/models", methods=["POST"])
 def api_train_models():
-    """Train models on one month of historical candle data and update performance metrics."""
+    """Train models on one month of historical candle data with proper backtest split."""
     try:
-        from .prediction_logger import PredictionLogger
-        from .performance_tracker import PerformanceTracker, detect_market_condition
-        import random
+        from .backtest import run_backtest
         
         # Get symbol and interval
         data = request.get_json() or {}
@@ -544,100 +542,39 @@ def api_train_models():
         
         candles_array = hist_df[["Open", "High", "Low", "Close", "Volume"]].values
         
-        predictions_generated = 0
-        conditions_seen = set()
-        
         print(f"Training on {len(candles_array)} candles from {hist_df.index[0]} to {hist_df.index[-1]}")
-        
-        # Fit deep models on full history before evaluation
-        fit_results = {}
-        for model_meta in models:
-            if model_meta['type'] in ("lstm", "transformer"):
-                try:
-                    model_obj, meta = registry.load_model(model_meta['id'])
-                    if hasattr(model_obj, "fit"):
-                        res = model_obj.fit(candles_array, epochs=10)
-                        fit_results[model_meta['name']] = res
-                        # persist trained weights back to same file
-                        import pickle
-                        from pathlib import Path
-                        p = Path(meta["file_path"])
-                        with open(p, "wb") as f:
-                            pickle.dump(model_obj, f)
-                except Exception as fe:
-                    fit_results[model_meta['name']] = {"ok": False, "error": str(fe)}
 
-        # Generate predictions for each model using historical data
-        for model_meta in models:
-            model_id = model_meta['id']
-            try:
-                model_obj, _ = registry.load_model(model_id)
-            except Exception as e:
-                return jsonify({
-                    "ok": False,
-                    "error": f"Failed to load model {model_meta['name']}: {str(e)}"
-                }), 500
-            
-            # Make predictions on different windows of historical data
-            # Use sliding windows to generate more varied training data
-            window_size = 30
-            step = 5  # Step through data with stride
-            
-            for start_idx in range(0, len(candles_array) - window_size, step):
-                subset = candles_array[start_idx : start_idx + window_size]
-                
-                # Detect market condition for this window
-                market_condition = detect_market_condition(subset)
-                
-                features = model_obj.prepare_features(subset)
-                prediction, confidence = model_obj.predict(features)
-                
-                # Log prediction
-                pred_id = logger.log_prediction(
-                    model_id=model_id,
-                    symbol=symbol,
-                    interval=interval,
-                    prediction=prediction,
-                    confidence=confidence,
-                    features=features
-                )
-                
-                # Simulate actual result based on next candle (for training purposes)
-                if start_idx + window_size < len(candles_array):
-                    next_close = candles_array[start_idx + window_size][3]  # Close price
-                    current_close = candles_array[start_idx + window_size - 1][3]
-                    
-                    if next_close > current_close:
-                        actual = "up"
-                    elif next_close < current_close:
-                        actual = "down"
-                    else:
-                        actual = "neutral"
-                else:
-                    actual = random.choice(["up", "down", "neutral"])
-                
-                logger.update_actual_result(pred_id, actual)
-                
-                predictions_generated += 1
-                conditions_seen.add(market_condition)
-        
-        # Update performance metrics
-        for model_meta in models:
-            tracker.update_performance(
-                model_meta['id'],
-                symbol,
-                interval,
-                "mixed"  # Models trained on mixed market conditions
-            )
-        
+        # Use proper train/test split + threshold labeling via backtest engine
+        threshold = float(data.get("threshold", 0.2))
+        train_ratio = float(data.get("train_ratio", 0.8))
+        bt = run_backtest(
+            candles=candles_array,
+            symbol=symbol,
+            interval=interval,
+            registry=registry,
+            logger=logger,
+            tracker=tracker,
+            threshold=threshold,
+            window_size=30,
+            step=5,
+            train_ratio=train_ratio,
+            log_to_db=True,
+        )
+        if not bt.get("ok"):
+            return jsonify({"ok": False, "error": bt.get("error", "backtest failed")}), 500
+
         return jsonify({
             "ok": True,
-            "predictions_generated": predictions_generated,
-            "conditions": list(conditions_seen),
+            "predictions_generated": bt["predictions_generated"],
+            "conditions": bt["conditions"],
             "candles_analyzed": len(candles_array),
+            "train_samples": bt["train_samples"],
+            "test_samples": bt["test_samples"],
+            "threshold": bt["threshold"],
             "symbol": symbol,
             "interval": interval,
-            "fit_results": fit_results,
+            "fit_results": bt["fit_results"],
+            "results": bt["results"],
             "data_range": {
                 "start": hist_df.index[0].isoformat(),
                 "end": hist_df.index[-1].isoformat()
