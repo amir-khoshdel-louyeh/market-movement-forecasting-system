@@ -86,11 +86,47 @@ def _start_stream(symbol: str, interval: str):
     # Seed history for the newly selected symbol/interval so the UI loads matching candles
     _seed_history(symbol, interval, limit=50)
 
+    def _resolve_pending_on_close(prev_close: float, curr_close: float):
+        try:
+            from .backtest import label_next  # threshold-consistent labeling
+            from .prediction_logger import PredictionLogger
+            from .performance_tracker import PerformanceTracker
+            actual = label_next(prev_close, curr_close)
+            logger = PredictionLogger()
+            pending = logger.get_pending_predictions(symbol=symbol, interval=interval) if False else logger.get_pending_predictions(symbol=symbol)
+            # filter by interval manually (get_pending has no interval filter)
+            pending = [p for p in pending if p["interval"] == interval and p["symbol"] == symbol.lower()]
+            if not pending:
+                return
+            for p in pending:
+                logger.update_actual_result(p["id"], actual)
+            # refresh performance for affected models
+            tracker = PerformanceTracker()
+            model_ids = set(pp["model_id"] for pp in pending)
+            for mid in model_ids:
+                tracker.update_performance(mid, symbol, interval, "mixed")
+            print(f"Auto-resolved {len(pending)} pending predictions as {actual} ({prev_close}->{curr_close})")
+        except Exception as e:
+            print(f"Auto-resolve failed: {e}")
+
     def on_kline(kmsg):
         k = kmsg.k
+        # capture prev close before upsert for auto-resolve
+        prev_close = None
+        with state.lock:
+            if not state.df.empty:
+                try:
+                    prev_close = float(state.df.iloc[-1]["Close"])
+                except Exception:
+                    prev_close = None
         # Use UTC to avoid local-time shifts; keep ms epoch for clients
         dt = pd.to_datetime(k.t, unit='ms', utc=True)
         state.upsert_kline(dt, k)
+        if bool(k.x) and prev_close is not None:
+            try:
+                _resolve_pending_on_close(prev_close, float(k.c))
+            except Exception as e:
+                print(f"resolve on close error: {e}")
         event = {
             "t": int(k.t),
             "closed": bool(k.x),
