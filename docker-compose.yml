@@ -6,4 +6,14 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
+      - mmfs_backup:/backup
     restart: unless-stopped
+  backup:
+    image: alpine:3.20
+    volumes:
+      - ./data:/data:ro
+      - mmfs_backup:/backup
+    entrypoint: ["sh","-c","while true; do ts=$(date +%Y%m%d%H%M%S); tar -czf /backup/mmfs-$$ts.tgz -C /data . 2>/dev/null; sleep 86400; done"]
+    restart: unless-stopped
+volumes:
+  mmfs_backup:
