@@ -7,10 +7,12 @@ from datetime import datetime, timedelta
 from typing import List
 from pathlib import Path
 
+import re
 import numpy as np
 import pandas as pd
 from flask import Flask, Response, request, jsonify, render_template
 import requests
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .mmfs_stream import StreamConfig, stream_kline, DEFAULT_SYMBOL
 from .model_registry import ModelRegistry
@@ -57,6 +59,29 @@ class WebState:
         if len(self.df) > self.max_rows:
             self.df = self.df.tail(self.max_rows)
 
+
+class SymbolIntervalRequest(BaseModel):
+    symbol: str = Field(default="btcusdt", pattern=r"^[a-z0-9]{4,15}$")
+    interval: str = Field(default="1m")
+
+    @field_validator("symbol")
+    @classmethod
+    def lower_symbol(cls, v): return v.lower().strip()
+
+    @field_validator("interval")
+    @classmethod
+    def valid_interval(cls, v):
+        allowed = {"1m","5m","15m","30m","1h","4h","1d"}
+        if v not in allowed:
+            raise ValueError(f"interval must be one of {allowed}")
+        return v
+
+def _validate_symbol_interval(symbol: str, interval: str):
+    try:
+        m = SymbolIntervalRequest(symbol=symbol, interval=interval)
+        return m.symbol, m.interval
+    except ValidationError as e:
+        raise ValueError(e.errors()[0]["msg"])
 
 state = WebState()
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -339,8 +364,12 @@ def ml_dashboard():
 @limiter.limit("30 per minute")
 def start():
     data = request.get_json(silent=True) or {}
-    symbol = (data.get("symbol") or state.symbol).lower()
-    interval = data.get("interval") or state.interval
+    raw_symbol = (data.get("symbol") or state.symbol)
+    raw_interval = data.get("interval") or state.interval
+    try:
+        symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+    except ValueError as ve:
+        return jsonify({"ok": False, "error": str(ve)}), 400
     _start_stream(symbol, interval)
     return jsonify({"ok": True, "symbol": symbol, "interval": interval})
 
@@ -404,6 +433,24 @@ def api_models():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.errorhandler(429)
+def _ratelimit(e):
+    return jsonify({"ok": False, "error": "rate limited", "retry_after": str(e.description)}), 429
+
+@app.route("/api/openapi.json")
+def openapi_spec():
+    return jsonify({
+        "openapi": "3.0.0",
+        "info": {"title": "MMFS API", "version": "1.0.0"},
+        "paths": {
+            "/api/predict": {"post": {"summary": "predict", "parameters": [{"name": "symbol"}, {"name": "interval"}]}},
+            "/api/predictions": {"get": {"parameters": [{"name": "limit", "schema": {"type": "integer", "maximum": 100}}, {"name": "offset"}]}},
+            "/api/train/models": {"post": {}},
+            "/api/backtest": {"post": {}},
+            "/api/candles": {"get": {}},
+        }
+    })
+
 @app.route("/api/predict", methods=["POST"])
 @require_write
 @limiter.limit("30 per minute")
@@ -411,8 +458,12 @@ def api_predict():
     """Make a prediction using the best model for current conditions or a specific model."""
     try:
         data = request.get_json() or {}
-        symbol = data.get("symbol", state.symbol).lower()
-        interval = data.get("interval", state.interval)
+        raw_symbol = data.get("symbol", state.symbol)
+        raw_interval = data.get("interval", state.interval)
+        try:
+            symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 400
         use_ensemble = data.get("ensemble", False)
         model_id = data.get("model_id")
         
@@ -442,8 +493,12 @@ def api_predict():
 def api_performance():
     """Get performance metrics for all models."""
     try:
-        symbol = request.args.get("symbol", state.symbol).lower()
-        interval = request.args.get("interval", state.interval)
+        raw_symbol = request.args.get("symbol", state.symbol)
+        raw_interval = request.args.get("interval", state.interval)
+        try:
+            symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 400
         
         tracker = PerformanceTracker()
         registry = ModelRegistry()
@@ -468,26 +523,47 @@ def api_performance():
 
 @app.route("/api/predictions")
 def api_predictions():
-    """Get recent predictions with optional filters."""
+    """Get recent predictions with pagination and validation."""
     try:
         model_id = request.args.get("model_id", type=int)
         symbol = request.args.get("symbol")
         limit = request.args.get("limit", 50, type=int)
-        
+        offset = request.args.get("offset", 0, type=int)
+        # validation & bounds
+        try:
+            limit = int(limit)
+            offset = int(offset)
+        except Exception:
+            return jsonify({"ok": False, "error": "limit/offset must be int"}), 400
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+        if symbol:
+            try:
+                symbol, _ = _validate_symbol_interval(symbol, "1m")
+            except ValueError as ve:
+                return jsonify({"ok": False, "error": str(ve)}), 400
+
         logger = PredictionLogger()
-        
+        total = 0
+        with logger.get_connection(logger.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM predictions")
+            total = cur.fetchone()[0]
+
         if model_id:
-            predictions = logger.get_predictions_by_model(model_id, symbol, limit)
+            predictions = logger.get_predictions_by_model(model_id, symbol, limit+offset)
+            # emulate offset
+            predictions = predictions[offset:offset+limit]
         else:
-            # Get all recent predictions
             with logger.get_connection(logger.db_path) as conn:
                 cursor = conn.cursor()
-                query = "SELECT * FROM predictions ORDER BY timestamp DESC LIMIT ?"
-                cursor.execute(query, (limit,))
+                cursor.execute("SELECT * FROM predictions ORDER BY timestamp DESC LIMIT ? OFFSET ?", (limit, offset))
                 rows = cursor.fetchall()
                 predictions = [dict(row) for row in rows]
-        
-        return jsonify({"ok": True, "predictions": predictions})
+
+        resp = jsonify({"ok": True, "predictions": predictions, "total": total, "limit": limit, "offset": offset})
+        resp.headers["X-Total-Count"] = str(total)
+        return resp
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -559,18 +635,22 @@ def api_train_models():
         
         # Get symbol and interval
         data = request.get_json() or {}
-        symbol = data.get("symbol", state.symbol).lower()
-        interval = data.get("interval", state.interval)
-        
+        raw_symbol = data.get("symbol", state.symbol)
+        raw_interval = data.get("interval", state.interval)
+        try:
+            symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 400
+
         logger = PredictionLogger()
         tracker = PerformanceTracker()
         registry = ModelRegistry()
-        
+
         # Get all registered models
         models = registry.list_models()
         if not models:
             return jsonify({"ok": False, "error": "No models registered. Initialize baselines first."}), 400
-        
+
         # Download historical data (30 days, cached)
         print(f"Fetching one month of historical data for {symbol}...")
         hist_df = _get_historical_data(symbol, interval, days=30, use_cache=True)
@@ -635,8 +715,12 @@ def api_backtest():
     try:
         from .backtest import run_backtest
         data = request.get_json() or {}
-        symbol = data.get("symbol", state.symbol).lower()
-        interval = data.get("interval", state.interval)
+        raw_symbol = data.get("symbol", state.symbol)
+        raw_interval = data.get("interval", state.interval)
+        try:
+            symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 400
         days = int(data.get("days", 30))
         threshold = float(data.get("threshold", 0.2))
         train_ratio = float(data.get("train_ratio", 0.8))
@@ -668,8 +752,12 @@ def api_resolve():
     try:
         from .backtest import label_next
         data = request.get_json() or {}
-        symbol = (data.get("symbol") or state.symbol).lower()
-        interval = data.get("interval") or state.interval
+        raw_symbol = data.get("symbol") or state.symbol
+        raw_interval = data.get("interval") or state.interval
+        try:
+            symbol, interval = _validate_symbol_interval(str(raw_symbol), str(raw_interval))
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 400
         threshold = float(data.get("threshold", 0.2))
         # need at least 2 closes to determine direction
         with state.lock:
