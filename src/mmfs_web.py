@@ -18,7 +18,7 @@ from .prediction_logger import PredictionLogger
 from .performance_tracker import PerformanceTracker
 from .aggregate_selector import AggregateModelSelector
 from .database import init_db
-from .auth import require_auth
+from .auth import require_auth, require_write
 
 
 class WebState:
@@ -60,6 +60,38 @@ class WebState:
 
 state = WebState()
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["SECRET_KEY"] = __import__("os").getenv("FLASK_SECRET", "dev-secret-change-me")
+
+# CORS - per-env origins
+try:
+    from flask_cors import CORS
+    _cors_origins = __import__("os").getenv("CORS_ORIGINS", "*").strip()
+    if _cors_origins == "*":
+        CORS(app)
+    else:
+        CORS(app, origins=[o.strip() for o in _cors_origins.split(",") if o.strip()])
+except Exception:
+    pass
+
+# Rate limiter
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    limiter = Limiter(get_remote_address, app=app, default_limits=["200 per minute"], storage_uri="memory://")
+except Exception:
+    class _Noop:
+        def limit(self, *a, **kw):
+            def deco(fn): return fn
+            return deco
+    limiter = _Noop()  # type: ignore
+
+@app.after_request
+def _sec_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Content-Security-Policy", "default-src 'self' https://cdn.plot.ly; script-src 'self' 'unsafe-inline' https://cdn.plot.ly; style-src 'self' 'unsafe-inline'; connect-src 'self'")
+    return resp
 
 
 def _publish(event: dict):
@@ -303,7 +335,8 @@ def ml_dashboard():
 
 
 @app.route("/start", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("30 per minute")
 def start():
     data = request.get_json(silent=True) or {}
     symbol = (data.get("symbol") or state.symbol).lower()
@@ -372,7 +405,8 @@ def api_models():
 
 
 @app.route("/api/predict", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("30 per minute")
 def api_predict():
     """Make a prediction using the best model for current conditions or a specific model."""
     try:
@@ -459,7 +493,8 @@ def api_predictions():
 
 
 @app.route("/api/train/initialize", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("10 per minute")
 def api_train_initialize():
     """Initialize and register baseline + deep models."""
     try:
@@ -515,7 +550,8 @@ def api_train_initialize():
 
 
 @app.route("/api/train/models", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("5 per minute")
 def api_train_models():
     """Train models on one month of historical candle data with proper backtest split."""
     try:
@@ -592,7 +628,8 @@ def api_train_models():
 
 
 @app.route("/api/backtest", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("10 per minute")
 def api_backtest():
     """Dry-run backtest without DB writes; shows train/test metrics per model."""
     try:
@@ -624,7 +661,8 @@ def api_backtest():
 
 
 @app.route("/api/resolve", methods=["POST"])
-@require_auth
+@require_write
+@limiter.limit("20 per minute")
 def api_resolve():
     """Manually resolve pending predictions using latest closed candle."""
     try:
