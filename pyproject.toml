@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "market-movement-forecasting-system"
 version = "0.1.0"
-description = "Market Movement Forecasting: streaming market data via websockets, later LSTM/Transformer modeling with GUI"
+description = "Market Movement Forecasting: Binance streaming, LSTM/Transformer ensemble, SQLite persistence, threshold backtest and Flask GUI"
 authors = [{ name = "Amir" }]
 readme = "README.md"
 requires-python = ">=3.10"
