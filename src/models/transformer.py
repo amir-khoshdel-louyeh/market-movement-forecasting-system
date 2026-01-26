@@ -173,11 +173,22 @@ class TransformerModel(BaseModel):
         conf = min(0.55 + abs(price_change_pct) * 0.08 + boost, 0.92)
         return ("up" if price_change_pct > 0 else "down"), float(conf)
 
-    def fit(self, candles: np.ndarray, epochs: int = 15, lr: float = 1e-3, batch_size: int = 32) -> Dict[str, Any]:
+    def fit(self, candles: np.ndarray, epochs: int = 15, lr: float = 1e-3, batch_size: int = 32, patience: int = 3, seed: int = 42) -> Dict[str, Any]:
         if not HAS_TORCH:
             return {"ok": False, "reason": "torch not installed"}
         if len(candles) < self.seq_len + 1:
             return {"ok": False, "reason": f"need >= {self.seq_len+1} candles, got {len(candles)}"}
+        try:
+            import random
+            random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic=True; torch.backends.cudnn.benchmark=False
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        except Exception:
+            pass
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.net.to(device)
         X, y = [], []
         for i in range(len(candles) - self.seq_len):
             window = candles[i : i + self.seq_len]
@@ -191,24 +202,60 @@ class TransformerModel(BaseModel):
             else:
                 label = self.rev_label["neutral"]
             norm = self._normalize_window(window.astype(np.float32))
-            X.append(norm)
-            y.append(label)
-        X = np.array(X, dtype=np.float32)
-        y = np.array(y, dtype=np.int64)
-        dataset = torch.utils.data.TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
-        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        opt = torch.optim.Adam(self.net.parameters(), lr=lr)
-        crit = nn.CrossEntropyLoss()
-        self.net.train()
-        last_loss = 0.0
-        for epoch in range(epochs):
-            total = 0.0
-            for xb, yb in loader:
-                opt.zero_grad()
-                logits = self.net(xb)
-                loss = crit(logits, yb)
-                loss.backward()
-                opt.step()
-                total += loss.item() * xb.size(0)
-            last_loss = total / len(dataset)
-        return {"ok": True, "loss": float(last_loss), "samples": int(len(X)), "epochs": int(epochs)}
+            X.append(norm); y.append(label)
+        X = np.array(X, dtype=np.float32); y=np.array(y, dtype=np.int64)
+        n=len(X); split=int(n*0.85)
+        X_train,y_train=X[:split],y[:split]
+        X_val,y_val=X[split:],y[split:] if split<n else (X[:1],y[:1])
+        train_ds=torch.utils.data.TensorDataset(torch.from_numpy(X_train),torch.from_numpy(y_train))
+        val_ds=torch.utils.data.TensorDataset(torch.from_numpy(X_val),torch.from_numpy(y_val))
+        train_loader=torch.utils.data.DataLoader(train_ds,batch_size=batch_size,shuffle=True)
+        val_loader=torch.utils.data.DataLoader(val_ds,batch_size=batch_size)
+        opt=torch.optim.Adam(self.net.parameters(),lr=lr)
+        crit=nn.CrossEntropyLoss()
+        best_val=float("inf"); wait=0; best_state=None; last_loss=0.0
+        for epoch in range(int(epochs)):
+            self.net.train(); total=0.0
+            for xb,yb in train_loader:
+                xb,yb=xb.to(device),yb.to(device); opt.zero_grad(); loss=crit(self.net(xb),yb); loss.backward(); opt.step(); total+=loss.item()*xb.size(0)
+            last_loss=total/len(train_ds)
+            self.net.eval(); vloss=0.0
+            with torch.no_grad():
+                for xb,yb in val_loader:
+                    xb,yb=xb.to(device),yb.to(device); vloss+=crit(self.net(xb),yb).item()*xb.size(0)
+            vloss=vloss/len(val_ds) if len(val_ds) else last_loss
+            if vloss < best_val -1e-4:
+                best_val=vloss; wait=0; best_state={k:v.cpu().clone() for k,v in self.net.state_dict().items()}
+            else:
+                wait+=1
+                if wait>=patience:
+                    break
+        if best_state is not None:
+            self.net.load_state_dict(best_state)
+        self.net.to("cpu")
+        self.net.eval(); preds=[]
+        with torch.no_grad():
+            for xb,_ in val_loader:
+                preds.extend(torch.argmax(self.net(xb),1).tolist())
+        metrics={}
+        for idx,name in self.label_map.items():
+            tp=sum(1 for p,t in zip(preds,y_val) if p==idx and t==idx)
+            fp=sum(1 for p,t in zip(preds,y_val) if p==idx and t!=idx)
+            fn=sum(1 for p,t in zip(preds,y_val) if p!=idx and t==idx)
+            prec=tp/(tp+fp) if tp+fp else 0; rec=tp/(tp+fn) if tp+fn else 0; f1=2*prec*rec/(prec+rec) if prec+rec else 0
+            metrics[name]={"precision":prec,"recall":rec,"f1":f1}
+        acc=sum(1 for p,t in zip(preds,y_val) if p==t)/len(y_val) if len(y_val) else 0
+        sharpe=0.0
+        try:
+            rets=[]
+            for i,p in enumerate(preds):
+                idx=split+i
+                if idx+1<len(candles):
+                    pct=(float(candles[idx+1,3])-float(candles[idx,3]))/float(candles[idx,3])
+                    sign=1 if p==self.rev_label["up"] else -1 if p==self.rev_label["down"] else 0
+                    rets.append(sign*pct)
+            if rets:
+                sharpe=float(np.mean(rets)/(np.std(rets)+1e-9)*(252**0.5))
+        except Exception:
+            pass
+        return {"ok": True, "loss": float(last_loss), "val_loss": float(best_val), "samples": int(n), "epochs": int(epochs), "early_stopped": wait>=patience, "accuracy": acc, "per_class": metrics, "sharpe": sharpe, "device": str(device)}
