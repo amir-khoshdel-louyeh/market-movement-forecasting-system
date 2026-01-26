@@ -71,8 +71,14 @@ class StreamConfig:
         return f"{BINANCE_WS_URL}/{self.symbol}@ticker"
 
 
+def _backoff(attempt: int, base: float = 1.0, cap: float = 60.0) -> float:
+    import random
+    exp = min(cap, base * (2 ** attempt))
+    return exp * (0.5 + random.random() * 0.5)
+
 async def stream_ticker(cfg: StreamConfig):
     print(f"Connecting to {cfg.url}")
+    attempt = 0
     async for ws in websockets.connect(cfg.url, ping_interval=20, ping_timeout=20):
         try:
             print("Connected. Streaming messages...")
@@ -100,13 +106,15 @@ async def stream_ticker(cfg: StreamConfig):
                     )
                 )
         except websockets.ConnectionClosedError as e:
-            print(f"Connection closed, retrying: {e}")
-            await asyncio.sleep(2)
+            print(f"[alert] Connection closed, retrying: {e}")
+            await asyncio.sleep(_backoff(attempt)); attempt += 1
             continue
         except Exception as e:
-            print(f"Error: {e}")
-            await asyncio.sleep(2)
+            print(f"[alert] Error: {e}")
+            await asyncio.sleep(_backoff(attempt)); attempt += 1
             continue
+        else:
+            attempt = 0
 
 
 async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None, stop_event=None):
@@ -117,11 +125,13 @@ async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None, s
     url = f"{BINANCE_WS_URL}/{cfg.symbol}@kline_{interval}"
     print(f"Connecting to {url}")
 
+    attempt = 0
     while True:
         if stop_event and stop_event.is_set():
             return
         try:
             async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                attempt = 0
                 print("Connected. Streaming klines...")
                 while True:
                     if stop_event and stop_event.is_set():
@@ -165,14 +175,14 @@ async def stream_kline(cfg: StreamConfig, interval: str = "1m", on_kline=None, s
         except websockets.ConnectionClosedError as e:
             if stop_event and stop_event.is_set():
                 return
-            print(f"Connection closed, retrying: {e}")
-            await asyncio.sleep(2)
+            print(f"[alert] Connection closed, retrying: {e}")
+            await asyncio.sleep(_backoff(attempt)); attempt += 1
             continue
         except Exception as e:
             if stop_event and stop_event.is_set():
                 return
-            print(f"Error: {e}")
-            await asyncio.sleep(2)
+            print(f"[alert] Error: {e}")
+            await asyncio.sleep(_backoff(attempt)); attempt += 1
             continue
 
 

@@ -28,7 +28,7 @@ class WebState:
         self.df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])  # Date index
         self.df.index.name = "Date"
         self.subscribers: List[queue.Queue] = []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.stream_thread: threading.Thread | None = None
         self.stop_event: threading.Event = threading.Event()
         self.symbol: str = DEFAULT_SYMBOL
@@ -783,14 +783,29 @@ def api_resolve():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+def _handle_sigterm(signum, frame):
+    print(f"Received signal {signum}, shutting down...")
+    state.stop_event.set()
+    if state.stream_thread and state.stream_thread.is_alive():
+        state.stream_thread.join(timeout=5)
+
 def run_web(host: str = "127.0.0.1", port: int = 5000):
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _handle_sigterm)
+        except Exception:
+            pass
     # Initialize database
     init_db()
     
     # Seed last 50 candles for default symbol/interval, then start stream
     _seed_history(state.symbol, state.interval, limit=50)
     _start_stream(state.symbol, state.interval)
-    app.run(host=host, port=port, debug=False, threaded=True)
+    try:
+        app.run(host=host, port=port, debug=False, threaded=True)
+    finally:
+        _handle_sigterm(signal.SIGTERM, None)
 
 
 if __name__ == "__main__":
