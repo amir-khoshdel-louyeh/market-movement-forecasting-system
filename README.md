@@ -64,20 +64,40 @@ Auto-Resolve + PerformanceTracker
 
 ### Example Output
 
+**GET /api/candles**
 ```json
-// GET /api/candles
 {
   "symbol": "btcusdt",
   "interval": "1m",
-  "candles": [{"t": 1788870540000, "o": 78314.23, "h": 78401.94, "l": 78314.23, "c": 78377.84, "v": 16.02}]
+  "candles": [
+    {"t": 1788870540000, "o": 78314.23, "h": 78401.94, "l": 78314.23, "c": 78377.84, "v": 16.02}
+  ]
 }
-// POST /api/predict  {"ensemble": true}
+```
+
+**POST /api/predict — {"ensemble": true}**
+```json
 {
   "ok": true,
-  "prediction": {"prediction": "up", "confidence": 0.68, "market_condition": "trending_up", "method": "ensemble", "ensemble_votes": {"up": 0.72}}
+  "prediction": {
+    "prediction": "up",
+    "confidence": 0.68,
+    "market_condition": "trending_up",
+    "method": "ensemble",
+    "ensemble_votes": {"up": 0.72, "down": 0.18, "neutral": 0.10}
+  }
 }
-// POST /api/train/models  (threshold 0.2% / 80/20)
-{"ok": true, "predictions_generated": 144, "train_samples": 2400, "test_samples": 600, "conditions": ["trending_up","volatile"]}
+```
+
+**POST /api/train/models — threshold 0.2% / 80/20**
+```json
+{
+  "ok": true,
+  "predictions_generated": 144,
+  "train_samples": 2400,
+  "test_samples": 600,
+  "conditions": ["trending_up", "volatile"]
+}
 ```
 
 ### Highlights
@@ -179,10 +199,16 @@ cp .env.example .env                 # set SYMBOL, BINANCE_WS_URL, API_TOKEN (em
 ### Direct Tool / Model / API Usage
 
 ```bash
+# Read-only
 curl http://127.0.0.1:5000/api/candles | jq '.candles[0]'
-curl -X POST http://127.0.0.1:5000/api/predict -H "Content-Type: application/json" -d '{"ensemble":true}' | jq
-curl -X POST http://127.0.0.1:5000/api/train/initialize | jq    # registers 6 models
-curl -X POST http://127.0.0.1:5000/api/train/models -H "Content-Type: application/json" -d '{"threshold":0.2}' | jq
+curl http://127.0.0.1:5000/api/models | jq '.models[].name'
+```
+
+```bash
+# Predict (ensemble)
+curl -X POST http://127.0.0.1:5000/api/predict \
+  -H "Content-Type: application/json" \
+  -d '{"ensemble": true}' | jq
 ```
 
 ```bash
@@ -539,12 +565,18 @@ pytest -v --cov=src --cov-report=term-missing --cov-fail-under=40
 ### Model / System Verification
 
 ```bash
-# dry backtest without DB writes
-curl -X POST http://127.0.0.1:5000/api/backtest -H "Content-Type: application/json" -d '{"symbol":"btcusdt","interval":"1m","days":5}' | jq
+# dry backtest without DB writes (no ledger side-effects)
+curl -X POST http://127.0.0.1:5000/api/backtest \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"btcusdt","interval":"1m","days":5}' | jq '.results[].metrics'
+```
 
-# train + ledger
+```bash
+# train + ledger (writes predictions + updates performance)
 curl -X POST http://127.0.0.1:5000/api/train/initialize | jq
-curl -X POST http://127.0.0.1:5000/api/train/models -H "Content-Type: application/json" -d '{"threshold":0.2}' | jq '.results[].metrics'
+curl -X POST http://127.0.0.1:5000/api/train/models \
+  -H "Content-Type: application/json" \
+  -d '{"threshold":0.2}' | jq '.results[].metrics'
 ```
 
 ### Manual Verification
