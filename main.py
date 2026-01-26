@@ -1,7 +1,7 @@
-import asyncio
 import argparse
+import asyncio
 
-from src.mmfs_stream import StreamConfig, stream_ticker, DEFAULT_SYMBOL
+from src.mmfs_stream import DEFAULT_SYMBOL, StreamConfig, stream_ticker
 from src.mmfs_web import run_web
 
 

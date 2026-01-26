@@ -30,11 +30,27 @@ mmfs-stream = "src.mmfs_stream:main"
 where = ["."]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4", "mypy>=1.8", "safetensors", "Flask-Cors", "Flask-Limiter"]
 
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+select = ["E","F","W","I"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 40
+show_missing = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov=src --cov-report=term-missing --cov-fail-under=40"
