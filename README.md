@@ -41,6 +41,10 @@ The project's own backtest report (30 days of 1-minute BTCUSDT, 600-candle dry r
 
 These are the repository's recorded results, not an independent replication. The accuracy figures are **not** a profitability claim: the task includes a neutral class, class balance is regime-dependent, and transaction costs, slippage and latency are outside the backtest. Treat them as a model-selection signal, not an expected trading return.
 
+![Recorded market charts](assets/charts.png)
+
+The committed chart set from the recorded run shows price context and volume alongside the dashboard inputs.
+
 **Verification in this pass:** the pytest suite runs green with 50.86% coverage, and the Flask dashboard starts and serves the ML panel. The dashboard was not populated with trained models during this documentation pass, so the screenshot above is the project's recorded run.
 
 ## Features
