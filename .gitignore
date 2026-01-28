@@ -9,3 +9,5 @@ data/*.csv
 data/*.db
 data/models/*.pkl
 !data/.gitkeep
+# Coverage artefacts from the test run
+.coverage
